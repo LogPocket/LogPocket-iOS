@@ -6,6 +6,9 @@
 //
 
 import Foundation
+#if canImport(WidgetKit)
+import WidgetKit
+#endif
 
 class UserDefaultsManager {
     static let shared = UserDefaultsManager()
@@ -25,6 +28,9 @@ class UserDefaultsManager {
     func saveSettings(_ settings: UserSettings) {
         if let encoded = try? JSONEncoder().encode(settings) {
             defaults.set(encoded, forKey: userSettingsKey)
+            #if canImport(WidgetKit)
+            WidgetCenter.shared.reloadTimelines(ofKind: "logpocketWidget")
+            #endif
         }
     }
     
@@ -38,6 +44,9 @@ class UserDefaultsManager {
     
     func clearSettings() {
         defaults.removeObject(forKey: userSettingsKey)
+        #if canImport(WidgetKit)
+        WidgetCenter.shared.reloadTimelines(ofKind: "logpocketWidget")
+        #endif
     }
     
     private func migrateFromStandardDefaultsIfNeeded() {

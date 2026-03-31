@@ -378,7 +378,7 @@ private final class WidgetRSSParser: NSObject, XMLParserDelegate {
             let linkCandidate = currentLink.trimmingCharacters(in: .whitespacesAndNewlines)
             let atomLink = currentAtomLink.trimmingCharacters(in: .whitespacesAndNewlines)
             let link = linkCandidate.isEmpty ? atomLink : linkCandidate
-            let summary = stripHTML(currentSummary).trimmingCharacters(in: .whitespacesAndNewlines)
+            let summary = cleanedSummary(from: currentSummary)
             let pubDate = parseDate(currentPubDate)
             
             if !title.isEmpty, !link.isEmpty {
@@ -399,15 +399,19 @@ private final class WidgetRSSParser: NSObject, XMLParserDelegate {
     }
     
     private func stripHTML(_ text: String) -> String {
-        guard let data = text.data(using: .utf8),
-              let attributed = try? NSAttributedString(
-                data: data,
-                options: [.documentType: NSAttributedString.DocumentType.html],
-                documentAttributes: nil
-              ) else {
-            return text
-        }
-        return attributed.string.replacingOccurrences(of: "\n", with: " ")
+        text
+            .replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
+            .replacingOccurrences(of: "&nbsp;", with: " ")
+            .replacingOccurrences(of: "&amp;", with: "&")
+            .replacingOccurrences(of: "&lt;", with: "<")
+            .replacingOccurrences(of: "&gt;", with: ">")
+            .replacingOccurrences(of: "\n", with: " ")
+    }
+    
+    private func cleanedSummary(from raw: String) -> String {
+        stripHTML(raw)
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
     
     private func parseDate(_ string: String) -> Date? {

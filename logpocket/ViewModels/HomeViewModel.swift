@@ -95,7 +95,8 @@ class HomeViewModel: ObservableObject {
                     title: title,
                     url: link,
                     platform: platform,
-                    publishedDate: item.publishedDate
+                    publishedDate: item.publishedDate,
+                    summary: item.summary
                 )
             }
         } catch {
@@ -131,6 +132,7 @@ private struct RSSItem {
     let title: String?
     let link: String?
     let publishedDate: Date?
+    let summary: String?
 }
 
 private final class RSSParser: NSObject, XMLParserDelegate {
@@ -139,6 +141,7 @@ private final class RSSParser: NSObject, XMLParserDelegate {
     private var currentTitle = ""
     private var currentLink = ""
     private var currentPubDate = ""
+    private var currentSummary = ""
     private var currentAtomLink = ""
     private var isInsideItem = false
     
@@ -164,6 +167,7 @@ private final class RSSParser: NSObject, XMLParserDelegate {
             currentTitle = ""
             currentLink = ""
             currentPubDate = ""
+            currentSummary = ""
             currentAtomLink = ""
         }
         
@@ -182,6 +186,8 @@ private final class RSSParser: NSObject, XMLParserDelegate {
             currentLink += string
         case "pubDate", "published", "updated":
             currentPubDate += string
+        case "description", "summary", "content":
+            currentSummary += string
         default:
             break
         }
@@ -199,13 +205,15 @@ private final class RSSParser: NSObject, XMLParserDelegate {
             let atomLink = currentAtomLink.trimmingCharacters(in: .whitespacesAndNewlines)
             let link = linkCandidate.isEmpty ? atomLink : linkCandidate
             let pubDate = date(from: currentPubDate)
+            let summary = cleanSummary(currentSummary)
             
             if !title.isEmpty, !link.isEmpty {
                 items.append(
                     RSSItem(
                         title: title,
                         link: link,
-                        publishedDate: pubDate
+                        publishedDate: pubDate,
+                        summary: summary
                     )
                 )
             }
@@ -238,5 +246,21 @@ private final class RSSParser: NSObject, XMLParserDelegate {
         }
         
         return nil
+    }
+    
+    private func cleanSummary(_ raw: String) -> String {
+        let htmlRemoved = stripHTML(raw)
+        return htmlRemoved
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    
+    private func stripHTML(_ text: String) -> String {
+        text
+            .replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
+            .replacingOccurrences(of: "&nbsp;", with: " ")
+            .replacingOccurrences(of: "&amp;", with: "&")
+            .replacingOccurrences(of: "&lt;", with: "<")
+            .replacingOccurrences(of: "&gt;", with: ">")
     }
 }

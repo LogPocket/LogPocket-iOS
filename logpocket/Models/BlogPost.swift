@@ -13,4 +13,5 @@ struct BlogPost: Identifiable, Codable {
     let url: String
     let platform: BlogPlatform
     let publishedDate: Date?
+    let summary: String?
 }

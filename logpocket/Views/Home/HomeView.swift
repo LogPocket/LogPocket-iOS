@@ -124,6 +124,14 @@ struct BlogPostRow: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
+                    
+                    if let summary = post.summary, !summary.isEmpty {
+                        Text(summary)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                    }
                 }
                 
                 Spacer()
