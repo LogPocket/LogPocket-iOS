@@ -6,10 +6,13 @@
 import SwiftUI
 import WidgetKit
 import Foundation
+import AppIntents
 
 private enum WidgetGroupConfig {
     static let suiteName = "group.com.markrudy.logpockets"
     static let userSettingsKey = "userSettings"
+    static let largePostOffsetKey = "widgetLargePostOffset"
+    static let smallPostOffsetKey = "widgetSmallPostOffset"
 }
 
 private enum WidgetPlatform: String, Codable {
@@ -39,21 +42,27 @@ struct LogPocketEntry: TimelineEntry {
     let date: Date
     let posts: [WidgetPost]
     let errorMessage: String?
+    let largePostOffset: Int
+    let smallPostOffset: Int
 }
 
 struct LogPocketProvider: TimelineProvider {
     func placeholder(in context: Context) -> LogPocketEntry {
-        LogPocketEntry(date: .now, posts: samplePosts, errorMessage: nil)
+        LogPocketEntry(date: .now, posts: samplePosts, errorMessage: nil, largePostOffset: 0, smallPostOffset: 0)
     }
     
     func getSnapshot(in context: Context, completion: @escaping (LogPocketEntry) -> Void) {
         Task {
             let posts = await WidgetFeedLoader.loadPosts()
+            let offset = WidgetFeedLoader.loadLargePostOffset()
+            let smallOffset = WidgetFeedLoader.loadSmallPostOffset()
             completion(
                 LogPocketEntry(
                     date: .now,
                     posts: posts.isEmpty ? samplePosts : posts,
-                    errorMessage: posts.isEmpty ? "블로그 글을 불러오지 못했어요." : nil
+                    errorMessage: posts.isEmpty ? "블로그 글을 불러오지 못했어요." : nil,
+                    largePostOffset: offset,
+                    smallPostOffset: smallOffset
                 )
             )
         }
@@ -62,10 +71,14 @@ struct LogPocketProvider: TimelineProvider {
     func getTimeline(in context: Context, completion: @escaping (Timeline<LogPocketEntry>) -> Void) {
         Task {
             let posts = await WidgetFeedLoader.loadPosts()
+            let offset = WidgetFeedLoader.loadLargePostOffset()
+            let smallOffset = WidgetFeedLoader.loadSmallPostOffset()
             let entry = LogPocketEntry(
                 date: .now,
                 posts: posts.isEmpty ? samplePosts : posts,
-                errorMessage: posts.isEmpty ? "블로그 글을 불러오지 못했어요." : nil
+                errorMessage: posts.isEmpty ? "블로그 글을 불러오지 못했어요." : nil,
+                largePostOffset: offset,
+                smallPostOffset: smallOffset
             )
             let nextRefresh = Calendar.current.date(byAdding: .minute, value: 30, to: .now) ?? .now.addingTimeInterval(1800)
             completion(Timeline(entries: [entry], policy: .after(nextRefresh)))
@@ -98,7 +111,9 @@ struct LogPocketProvider: TimelineProvider {
                 summary: "State, Observable, Environment 흐름 요약."
             )
             ],
-            errorMessage: nil
+            errorMessage: nil,
+            largePostOffset: 0,
+            smallPostOffset: 0
         ).posts
     }
 }
@@ -119,84 +134,190 @@ struct logpocketWidgetEntryView: View {
     }
     
     private var smallWidget: some View {
-        ZStack {
-            Color(.systemBackground)
-            if let first = entry.posts.first {
-                VStack(alignment: .leading, spacing: 6) {
-                    headerBadge(label: "내 기록")
-                    Text(first.title)
-                        .font(.headline)
-                        .lineLimit(3)
-                    Spacer(minLength: 0)
-                    dateText(first.publishedDate)
+        ZStack(alignment: .bottomTrailing) {
+            Group {
+                if let post = selectedSmallPost {
+                    smallWidgetFilledContent(post: post)
+                } else {
+                    emptyState
+                        .padding(.trailing, 14)
                 }
-                .padding(14)
-            } else {
-                emptyState
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            
+            Button(intent: RefreshWidgetTimelineIntent()) {
+                Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 32, height: 32)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.trailing, 4)
+            .padding(.bottom, 4)
         }
-        .widgetURL(entry.posts.first.flatMap { URL(string: $0.url) })
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .widgetURL(selectedSmallPost.flatMap { URL(string: $0.url) })
     }
+    
+    private var selectedSmallPost: WidgetPost? {
+        guard !entry.posts.isEmpty else { return nil }
+        let count = entry.posts.count
+        let normalizedIndex = ((entry.smallPostOffset % count) + count) % count
+        return entry.posts[normalizedIndex]
+    }
+    
+    private func smallWidgetFilledContent(post: WidgetPost) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            smallWidgetHeaderRow
+            
+            Spacer(minLength: 4)
+            
+            Text(post.title)
+                .font(.system(size: 16, weight: .bold))
+                .foregroundStyle(.primary)
+                .lineLimit(3)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+            
+            Text(Self.smallWidgetDateFormatter.string(from: post.publishedDate ?? entry.date))
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .padding(.top, 4)
+            
+            Spacer(minLength: 0)
+        }
+        .padding(.top, 6)
+        .padding(.leading, 6)
+        .padding(.trailing, 24)
+        .padding(.bottom, 5)
+    }
+    
+    private var smallWidgetHeaderRow: some View {
+        HStack(spacing: 6) {
+            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                .fill(Color(red: 46 / 255, green: 204 / 255, blue: 113 / 255))
+                .frame(width: 18, height: 18)
+                .overlay {
+                    Text("V")
+                        .font(.caption2.bold())
+                        .foregroundStyle(.white)
+                }
+            Text("나의 기록")
+                .font(.caption)
+                .foregroundStyle(Color(white: 0.53))
+        }
+    }
+    
+    private static let smallWidgetDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "ko_KR")
+        f.dateFormat = "yyyy. MM. dd"
+        return f
+    }()
     
     private var mediumWidget: some View {
         ZStack {
-            Color(.systemBackground)
+            Color.clear
             if entry.posts.isEmpty {
                 emptyState
             } else {
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 7) {
                     headerBadge(label: "최근 글")
                     ForEach(Array(entry.posts.prefix(3)).indices, id: \.self) { idx in
                         let post = entry.posts[idx]
-                        HStack(spacing: 8) {
+                        HStack(spacing: 6) {
                             Circle()
                                 .fill(Color.accentColor.opacity(0.2))
                                 .frame(width: 7, height: 7)
                             Text(post.title)
                                 .font(.subheadline.weight(.semibold))
                                 .lineLimit(1)
-                            Spacer(minLength: 6)
+                            Spacer(minLength: 4)
                             dateText(post.publishedDate)
                                 .font(.caption2)
                         }
                     }
                 }
-                .padding(14)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 7)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .widgetURL(entry.posts.first.flatMap { URL(string: $0.url) })
     }
     
     private var largeWidget: some View {
         ZStack {
-            Color(.systemBackground)
-            if let first = entry.posts.first {
+            Color.clear
+            if let selectedPost = selectedLargePost {
                 VStack(alignment: .leading, spacing: 10) {
                     headerBadge(label: "추억 회선")
-                    Text(first.title)
+                    Text(selectedPost.title)
                         .font(.headline)
                         .lineLimit(3)
-                    dateText(first.publishedDate)
+                    dateText(selectedPost.publishedDate)
                         .font(.caption)
-                    if let summary = first.summary, !summary.isEmpty {
+                    if let summary = selectedPost.summary, !summary.isEmpty {
                         Text(summary)
-                            .font(.caption)
+                            .font(.system(size: 14))
                             .foregroundStyle(.secondary)
                             .lineLimit(8)
                     }
-                    Divider()
-                    ForEach(Array(entry.posts.dropFirst().prefix(2))) { post in
-                        Text("• \(post.title)")
-                            .font(.caption)
-                            .lineLimit(1)
+                    
+                    Spacer(minLength: 0)
+                    
+                    HStack(spacing: 10) {
+                        Button(intent: ChangeLargePostIntent(direction: .previous)) {
+                            navigationButtonLabel(title: "Previous", symbol: "chevron.left", isLeading: true)
+                        }
+                        .buttonStyle(.plain)
+                        
+                        Button(intent: ChangeLargePostIntent(direction: .next)) {
+                            navigationButtonLabel(title: "Next", symbol: "chevron.right", isLeading: false)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .padding(16)
             } else {
                 emptyState
             }
         }
-        .widgetURL(entry.posts.first.flatMap { URL(string: $0.url) })
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .widgetURL(selectedLargePost.flatMap { URL(string: $0.url) })
+    }
+    
+    private var selectedLargePost: WidgetPost? {
+        guard !entry.posts.isEmpty else { return nil }
+        let count = entry.posts.count
+        let normalizedIndex = ((entry.largePostOffset % count) + count) % count
+        return entry.posts[normalizedIndex]
+    }
+    
+    private func navigationButtonLabel(title: String, symbol: String, isLeading: Bool) -> some View {
+        HStack(spacing: 6) {
+            if isLeading {
+                Image(systemName: symbol)
+            }
+            Text(title)
+                .font(.caption.weight(.semibold))
+            if !isLeading {
+                Image(systemName: symbol)
+            }
+        }
+        .foregroundStyle(.white.opacity(0.92))
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 9)
+        .background(
+            LinearGradient(
+                colors: [Color.gray.opacity(0.78), Color.gray.opacity(0.58)],
+                startPoint: .top,
+                endPoint: .bottom
+            ),
+            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+        )
     }
     
     private func headerBadge(label: String) -> some View {
@@ -230,7 +351,7 @@ struct logpocketWidgetEntryView: View {
                 .foregroundStyle(.secondary)
             Spacer(minLength: 0)
         }
-        .padding(14)
+        .padding(8)
     }
 }
 
@@ -248,7 +369,7 @@ struct logpocketWidget: Widget {
     }
 }
 
-private enum WidgetFeedLoader {
+enum WidgetFeedLoader {
     static func loadPosts() async -> [WidgetPost] {
         guard let settings = loadSettings() else { return [] }
         guard let feedURL = buildFeedURL(from: settings) else { return [] }
@@ -281,6 +402,28 @@ private enum WidgetFeedLoader {
         return settings
     }
     
+    static func loadLargePostOffset() -> Int {
+        let defaults = UserDefaults(suiteName: WidgetGroupConfig.suiteName) ?? .standard
+        return defaults.integer(forKey: WidgetGroupConfig.largePostOffsetKey)
+    }
+    
+    static func adjustLargePostOffset(by delta: Int) {
+        let defaults = UserDefaults(suiteName: WidgetGroupConfig.suiteName) ?? .standard
+        let current = defaults.integer(forKey: WidgetGroupConfig.largePostOffsetKey)
+        defaults.set(current + delta, forKey: WidgetGroupConfig.largePostOffsetKey)
+    }
+    
+    static func loadSmallPostOffset() -> Int {
+        let defaults = UserDefaults(suiteName: WidgetGroupConfig.suiteName) ?? .standard
+        return defaults.integer(forKey: WidgetGroupConfig.smallPostOffsetKey)
+    }
+    
+    static func adjustSmallPostOffset(by delta: Int) {
+        let defaults = UserDefaults(suiteName: WidgetGroupConfig.suiteName) ?? .standard
+        let current = defaults.integer(forKey: WidgetGroupConfig.smallPostOffsetKey)
+        defaults.set(current + delta, forKey: WidgetGroupConfig.smallPostOffsetKey)
+    }
+    
     private static func buildFeedURL(from settings: WidgetUserSettings) -> URL? {
         let platform = settings.preferredPlatform
             ?? (settings.hasTistory ? .tistory : (settings.hasVelog ? .velog : nil))
@@ -299,6 +442,55 @@ private enum WidgetFeedLoader {
         case nil:
             return nil
         }
+    }
+}
+
+enum LargePostDirection: String, AppEnum {
+    case previous
+    case next
+    
+    static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "Post Direction")
+    static var caseDisplayRepresentations: [Self: DisplayRepresentation] = [
+        .previous: "Previous",
+        .next: "Next"
+    ]
+    
+    var delta: Int {
+        switch self {
+        case .previous: return -1
+        case .next: return 1
+        }
+    }
+}
+
+struct RefreshWidgetTimelineIntent: AppIntent {
+    static var title: LocalizedStringResource = "Refresh Widget"
+    
+    func perform() async throws -> some IntentResult {
+        WidgetFeedLoader.adjustSmallPostOffset(by: 1)
+        WidgetCenter.shared.reloadTimelines(ofKind: "logpocketWidget")
+        return .result()
+    }
+}
+
+struct ChangeLargePostIntent: AppIntent {
+    static var title: LocalizedStringResource = "Change Large Widget Post"
+    
+    @Parameter(title: "Direction")
+    var direction: LargePostDirection
+    
+    init() {
+        direction = .next
+    }
+    
+    init(direction: LargePostDirection) {
+        self.direction = direction
+    }
+    
+    func perform() async throws -> some IntentResult {
+        WidgetFeedLoader.adjustLargePostOffset(by: direction.delta)
+        WidgetCenter.shared.reloadTimelines(ofKind: "logpocketWidget")
+        return .result()
     }
 }
 
