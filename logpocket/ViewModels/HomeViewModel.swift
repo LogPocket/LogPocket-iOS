@@ -65,13 +65,36 @@ class HomeViewModel: ObservableObject {
         shouldNavigateToOnboarding = true
     }
     
+    func refreshPosts() {
+        loadBlogPosts()
+    }
+    
+    func syncWidgetDataOnAppActivation() async {
+        let latestSettings = UserDefaultsManager.shared.loadSettings()
+        settings = latestSettings
+        
+        let platforms = availablePlatforms(from: latestSettings)
+        guard !platforms.isEmpty else { return }
+        
+        for platform in platforms {
+            let posts = await fetchBlogPosts(for: platform, settings: latestSettings)
+            if !posts.isEmpty {
+                UserDefaultsManager.shared.saveLatestPosts(posts, for: platform)
+            }
+        }
+    }
+    
     private func loadBlogPosts() {
         isLoading = true
         let platform = selectedPlatform
+        let currentSettings = settings
         
         Task { [weak self] in
             guard let self else { return }
-            let posts = await self.fetchBlogPosts(for: platform)
+            let posts = await self.fetchBlogPosts(for: platform, settings: currentSettings)
+            if !posts.isEmpty {
+                UserDefaultsManager.shared.saveLatestPosts(posts, for: platform)
+            }
             
             await MainActor.run {
                 self.blogPosts = posts
@@ -80,8 +103,22 @@ class HomeViewModel: ObservableObject {
         }
     }
     
-    private func fetchBlogPosts(for platform: BlogPlatform) async -> [BlogPost] {
-        guard let feedURL = feedURL(for: platform) else { return [] }
+    private func availablePlatforms(from settings: UserSettings) -> [BlogPlatform] {
+        var platforms: [BlogPlatform] = []
+        
+        if settings.hasTistory {
+            platforms.append(.tistory)
+        }
+        
+        if settings.hasVelog {
+            platforms.append(.velog)
+        }
+        
+        return platforms
+    }
+    
+    private func fetchBlogPosts(for platform: BlogPlatform, settings: UserSettings) async -> [BlogPost] {
+        guard let feedURL = feedURL(for: platform, settings: settings) else { return [] }
         
         do {
             let (data, _) = try await URLSession.shared.data(from: feedURL)
@@ -104,7 +141,7 @@ class HomeViewModel: ObservableObject {
         }
     }
     
-    private func feedURL(for platform: BlogPlatform) -> URL? {
+    private func feedURL(for platform: BlogPlatform, settings: UserSettings) -> URL? {
         let sourceURL: String
         
         switch platform {

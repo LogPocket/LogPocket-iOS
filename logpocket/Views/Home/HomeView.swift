@@ -8,6 +8,7 @@
 import SwiftUI
 
 struct HomeView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var viewModel = HomeViewModel()
     @State private var showTutorial = false
     @State private var navigateToOnboarding = false
@@ -56,6 +57,9 @@ struct HomeView: View {
                         .padding(.horizontal)
                         .padding(.bottom, 10)
                     }
+                    .refreshable {
+                        viewModel.refreshPosts()
+                    }
                 }
             }
             .background(Color(.systemGroupedBackground))
@@ -67,6 +71,14 @@ struct HomeView: View {
                         navigateToOnboarding = true
                     } label: {
                         Image(systemName: "link.circle")
+                    }
+                }
+                
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        viewModel.refreshPosts()
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
                     }
                 }
                 
@@ -94,6 +106,15 @@ struct HomeView: View {
                     .onDisappear {
                         viewModel.refreshSettings()
                     }
+            }
+            .task {
+                await viewModel.syncWidgetDataOnAppActivation()
+            }
+            .onChange(of: scenePhase) { _, newPhase in
+                guard newPhase == .active else { return }
+                Task {
+                    await viewModel.syncWidgetDataOnAppActivation()
+                }
             }
         }
     }
