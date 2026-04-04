@@ -12,6 +12,9 @@ private enum WidgetGroupConfig {
     static let suiteName = "group.com.markrudy.logpocket1"
     static let widgetKind = "logpocketWidget"
     static let userSettingsKey = "userSettings"
+    static let selectedPlatformKey = "widgetSelectedPlatform"
+    static let appDeepLinkScheme = "logpocket"
+    static let appDeepLinkHost = "post"
     static let largePostOffsetKey = "widgetLargePostOffset"
     static let smallPostOffsetKey = "widgetSmallPostOffset"
     static let cachedPostsTistoryKey = "widgetCachedPostsTistory"
@@ -24,6 +27,15 @@ private enum WidgetGroupConfig {
 enum WidgetPlatform: String, Codable {
     case tistory = "Tistory"
     case velog = "Velog"
+    
+    var deepLinkValue: String {
+        switch self {
+        case .tistory:
+            return "tistory"
+        case .velog:
+            return "velog"
+        }
+    }
     
     var symbolName: String {
         switch self {
@@ -225,16 +237,14 @@ struct logpocketWidgetEntryView: View {
         return ((entry.largePostOffset % count) + count) % count
     }
     
-    private var largeVisiblePosts: [WidgetPost] {
-        circularPosts(from: entry.posts, start: largeIndex, limit: 7)
+    private var focusedLargePost: WidgetPost? {
+        guard !entry.posts.isEmpty else { return nil }
+        return entry.posts[largeIndex]
     }
     
-    private var largePrimaryPost: WidgetPost? {
-        largeVisiblePosts.first
-    }
-    
-    private var largeSecondaryPosts: [WidgetPost] {
-        Array(largeVisiblePosts.dropFirst())
+    private var largeProgressLabel: String {
+        guard !entry.posts.isEmpty else { return "0/0" }
+        return "\(largeIndex + 1)/\(entry.posts.count)"
     }
     
     private var syncStatusText: String {
@@ -294,7 +304,7 @@ struct logpocketWidgetEntryView: View {
             .padding(8)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .widgetURL(selectedSmallPost.flatMap { URL(string: $0.url) })
+        .widgetURL(selectedSmallPost.flatMap { appDeepLink(for: $0) })
     }
     
     private var mediumWidget: some View {
@@ -322,19 +332,15 @@ struct logpocketWidgetEntryView: View {
     private var largeWidget: some View {
         VStack(alignment: .leading, spacing: 8) {
             headerBadge(
-                label: "\(platformLabel) 전체 글",
-                detail: "\(entry.posts.count)개 · \(syncStatusText)",
+                label: "\(platformLabel) 집중 보기",
+                detail: "\(largeProgressLabel) · \(syncStatusText)",
                 showsRefreshButton: true
             )
             
-            if let primary = largePrimaryPost {
-                largeFeaturedPost(primary)
-                
-                ForEach(Array(largeSecondaryPosts.enumerated()), id: \.element.id) { index, post in
-                    largePostRow(post: post, rank: index + 2)
-                }
-                
-                Spacer(minLength: 2)
+            largePlatformSelector
+            
+            if let primary = focusedLargePost {
+                largeFocusedPost(primary)
                 
                 HStack(spacing: 8) {
                     Button(intent: ChangeLargePostIntent(direction: .previous)) {
@@ -355,10 +361,39 @@ struct logpocketWidgetEntryView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
     
+    private var largePlatformSelector: some View {
+        HStack(spacing: 6) {
+            platformSelectionButton(.velog)
+            platformSelectionButton(.tistory)
+            Spacer(minLength: 0)
+        }
+    }
+    
+    private func platformSelectionButton(_ platform: WidgetPlatform) -> some View {
+        let isSelected = entry.platform == platform
+        
+        return Button(intent: SetWidgetPlatformIntent(platform: platform)) {
+            HStack(spacing: 4) {
+                Image(systemName: platform.symbolName)
+                    .font(.caption2.weight(.semibold))
+                Text(platform.rawValue)
+                    .font(.caption2.weight(.semibold))
+            }
+            .padding(.vertical, 5)
+            .padding(.horizontal, 8)
+            .background(
+                isSelected ? platform.tint.opacity(0.2) : Color(.secondarySystemBackground),
+                in: Capsule()
+            )
+            .foregroundStyle(isSelected ? platform.tint : .secondary)
+        }
+        .buttonStyle(.plain)
+    }
+    
     @ViewBuilder
     private func mediumPostRow(post: WidgetPost, rank: Int) -> some View {
-        if let url = URL(string: post.url) {
-            Link(destination: url) {
+        if let destination = appDeepLink(for: post) {
+            Link(destination: destination) {
                 mediumPostRowContent(post: post, rank: rank)
             }
         } else {
@@ -385,64 +420,55 @@ struct logpocketWidgetEntryView: View {
     }
     
     @ViewBuilder
-    private func largeFeaturedPost(_ post: WidgetPost) -> some View {
-        if let url = URL(string: post.url) {
-            Link(destination: url) {
-                largeFeaturedCard(post)
+    private func largeFocusedPost(_ post: WidgetPost) -> some View {
+        if let destination = appDeepLink(for: post) {
+            Link(destination: destination) {
+                largeFocusedCard(post)
             }
         } else {
-            largeFeaturedCard(post)
+            largeFocusedCard(post)
         }
     }
     
-    private func largeFeaturedCard(_ post: WidgetPost) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+    private func largeFocusedCard(_ post: WidgetPost) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                Label("앱에서 바로 이동", systemImage: "location.fill")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(accentColor)
+                Spacer(minLength: 6)
+                dateText(post.publishedDate)
+                    .font(.caption2)
+            }
+            
             Text(post.title)
-                .font(.headline)
-                .lineLimit(2)
+                .font(.headline.weight(.semibold))
+                .lineLimit(3)
+                .multilineTextAlignment(.leading)
             
             if let summary = post.summary, !summary.isEmpty {
                 Text(summary)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .lineLimit(2)
+                    .lineLimit(6)
+                    .multilineTextAlignment(.leading)
+            } else {
+                Text("요약이 없어도 탭하면 앱에서 해당 글 위치로 바로 이동해요.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
             }
-            
-            dateText(post.publishedDate)
-                .font(.caption2)
         }
-        .padding(.vertical, 6)
-        .padding(.horizontal, 8)
-        .background(accentColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-    }
-    
-    @ViewBuilder
-    private func largePostRow(post: WidgetPost, rank: Int) -> some View {
-        if let url = URL(string: post.url) {
-            Link(destination: url) {
-                largePostRowContent(post: post, rank: rank)
-            }
-        } else {
-            largePostRowContent(post: post, rank: rank)
-        }
-    }
-    
-    private func largePostRowContent(post: WidgetPost, rank: Int) -> some View {
-        HStack(spacing: 8) {
-            Text("\(rank)")
-                .font(.caption2.weight(.bold))
-                .foregroundStyle(accentColor)
-                .frame(width: 12, alignment: .leading)
-            
-            Text(post.title)
-                .font(.caption)
-                .lineLimit(1)
-            
-            Spacer(minLength: 4)
-            
-            dateText(post.publishedDate)
-                .font(.caption2)
-        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .background(
+            LinearGradient(
+                colors: [accentColor.opacity(0.16), accentColor.opacity(0.07)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
+            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+        )
     }
     
     private func navigationButtonLabel(title: String, symbol: String, isLeading: Bool) -> some View {
@@ -490,6 +516,17 @@ struct logpocketWidgetEntryView: View {
         }
     }
     
+    private func appDeepLink(for post: WidgetPost) -> URL? {
+        var components = URLComponents()
+        components.scheme = WidgetGroupConfig.appDeepLinkScheme
+        components.host = WidgetGroupConfig.appDeepLinkHost
+        components.queryItems = [
+            URLQueryItem(name: "url", value: post.url),
+            URLQueryItem(name: "platform", value: post.platform.deepLinkValue)
+        ]
+        return components.url
+    }
+    
     private func dateText(_ date: Date?) -> Text {
         guard let date else { return Text("-") }
         return Text(date, style: .date)
@@ -506,15 +543,6 @@ struct logpocketWidgetEntryView: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(3)
             Spacer(minLength: 0)
-        }
-    }
-    
-    private func circularPosts(from posts: [WidgetPost], start: Int, limit: Int) -> [WidgetPost] {
-        guard !posts.isEmpty else { return [] }
-        let count = min(limit, posts.count)
-        return (0..<count).map { offset in
-            let index = (start + offset) % posts.count
-            return posts[index]
         }
     }
     
@@ -695,6 +723,11 @@ enum WidgetFeedLoader {
     }
     
     private static func resolvePlatform(from settings: WidgetUserSettings) -> WidgetPlatform? {
+        if let selected = loadSelectedPlatform(),
+           buildFeedURL(from: settings, platform: selected) != nil {
+            return selected
+        }
+        
         if let preferred = settings.preferredPlatform,
            buildFeedURL(from: settings, platform: preferred) != nil {
             return preferred
@@ -709,6 +742,20 @@ enum WidgetFeedLoader {
         }
         
         return nil
+    }
+    
+    static func setSelectedPlatform(_ platform: WidgetPlatform) {
+        guard let defaults = sharedDefaults() else { return }
+        defaults.set(platform.deepLinkValue, forKey: WidgetGroupConfig.selectedPlatformKey)
+        defaults.set(0, forKey: WidgetGroupConfig.largePostOffsetKey)
+    }
+    
+    private static func loadSelectedPlatform() -> WidgetPlatform? {
+        guard let defaults = sharedDefaults(),
+              let raw = defaults.string(forKey: WidgetGroupConfig.selectedPlatformKey) else {
+            return nil
+        }
+        return platform(from: raw)
     }
     
     private static func platform(from rawValue: String?) -> WidgetPlatform? {
@@ -987,6 +1034,47 @@ enum LargePostDirection: String, AppEnum {
         case .previous: return -1
         case .next: return 1
         }
+    }
+}
+
+enum WidgetPlatformSelection: String, AppEnum {
+    case tistory
+    case velog
+    
+    static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "Widget Platform")
+    static var caseDisplayRepresentations: [Self: DisplayRepresentation] = [
+        .tistory: "Tistory",
+        .velog: "Velog"
+    ]
+    
+    var platform: WidgetPlatform {
+        switch self {
+        case .tistory:
+            return .tistory
+        case .velog:
+            return .velog
+        }
+    }
+}
+
+struct SetWidgetPlatformIntent: AppIntent {
+    static var title: LocalizedStringResource = "Set Widget Platform"
+    
+    @Parameter(title: "Platform")
+    var platform: WidgetPlatformSelection
+    
+    init() {
+        platform = .velog
+    }
+    
+    init(platform: WidgetPlatform) {
+        self.platform = platform == .tistory ? .tistory : .velog
+    }
+    
+    func perform() async throws -> some IntentResult {
+        WidgetFeedLoader.setSelectedPlatform(platform.platform)
+        WidgetCenter.shared.reloadTimelines(ofKind: WidgetGroupConfig.widgetKind)
+        return .result()
     }
 }
 
