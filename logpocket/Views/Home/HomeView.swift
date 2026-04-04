@@ -67,6 +67,7 @@ struct HomeView: View {
                                         post: post,
                                         isFocused: focusedPostID == post.id
                                     )
+                                    .padding(.horizontal, 2)
                                     .id(post.id)
                                 }
                             }
@@ -282,7 +283,7 @@ struct BlogPostRow: View {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .stroke(isFocused ? Color.accentColor.opacity(0.45) : Color.clear, lineWidth: 1.2)
             )
-            .scaleEffect(isFocused ? 1.01 : 1.0)
+            .shadow(color: isFocused ? Color.accentColor.opacity(0.22) : .clear, radius: 6, x: 0, y: 2)
             .animation(.easeOut(duration: 0.2), value: isFocused)
         }
         .buttonStyle(.plain)

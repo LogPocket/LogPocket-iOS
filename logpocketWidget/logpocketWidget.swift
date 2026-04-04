@@ -247,6 +247,34 @@ struct logpocketWidgetEntryView: View {
         return "\(largeIndex + 1)/\(entry.posts.count)"
     }
     
+    private var mediumLeadPost: WidgetPost? {
+        entry.posts.first
+    }
+    
+    private var mediumSecondaryPosts: [WidgetPost] {
+        Array(entry.posts.dropFirst().prefix(2))
+    }
+    
+    private struct RankedWidgetPost: Identifiable {
+        let post: WidgetPost
+        let rank: Int
+        var id: String { post.id }
+    }
+    
+    private var largeRelatedPosts: [RankedWidgetPost] {
+        guard !entry.posts.isEmpty else { return [] }
+        let limit = min(3, max(0, entry.posts.count - 1))
+        guard limit > 0 else { return [] }
+        
+        return (1...limit).map { offset in
+            let index = (largeIndex + offset) % entry.posts.count
+            return RankedWidgetPost(
+                post: entry.posts[index],
+                rank: index + 1
+            )
+        }
+    }
+    
     private var syncStatusText: String {
         if let lastUpdatedAt = entry.lastUpdatedAt {
             let relative = Self.relativeFormatter.localizedString(for: lastUpdatedAt, relativeTo: entry.date)
@@ -259,20 +287,28 @@ struct logpocketWidgetEntryView: View {
         ZStack(alignment: .bottomTrailing) {
             Group {
                 if let post = selectedSmallPost {
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 7) {
                         headerBadge(label: platformLabel, detail: "\(smallIndex + 1)/\(entry.posts.count)")
                         
                         Text(post.title)
                             .font(.system(size: 15, weight: .semibold))
                             .foregroundStyle(.primary)
-                            .lineLimit(3)
+                            .lineLimit(2)
                             .multilineTextAlignment(.leading)
                         
-                        if let summary = post.summary, !summary.isEmpty {
-                            Text(summary)
-                                .font(.caption2)
+                        Text(contentDigest(for: post))
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                        
+                        HStack(spacing: 6) {
+                            insightChip(text: topicLabel(for: post), tint: accentColor, filled: true)
+                            Text(readingHint(for: post))
+                                .font(.caption2.weight(.semibold))
                                 .foregroundStyle(.secondary)
-                                .lineLimit(2)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
                         }
                         
                         Spacer(minLength: 0)
@@ -314,12 +350,16 @@ struct logpocketWidgetEntryView: View {
             if entry.posts.isEmpty {
                 emptyState
             } else {
-                ForEach(Array(entry.posts.prefix(5).enumerated()), id: \.element.id) { index, post in
-                    mediumPostRow(post: post, rank: index + 1)
+                if let lead = mediumLeadPost {
+                    mediumLeadPostCard(lead)
                 }
                 
-                if entry.posts.count > 5 {
-                    Text("+\(entry.posts.count - 5)개 더")
+                ForEach(Array(mediumSecondaryPosts.enumerated()), id: \.element.id) { index, post in
+                    mediumSecondaryPostCard(post, rank: index + 2)
+                }
+                
+                if entry.posts.count > 3 {
+                    Text("+\(entry.posts.count - 3)개 더")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
@@ -341,6 +381,18 @@ struct logpocketWidgetEntryView: View {
             
             if let primary = focusedLargePost {
                 largeFocusedPost(primary)
+                
+                if !largeRelatedPosts.isEmpty {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("관련 글")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        
+                        ForEach(largeRelatedPosts) { item in
+                            largeRelatedPostRow(post: item.post, rank: item.rank)
+                        }
+                    }
+                }
                 
                 HStack(spacing: 8) {
                     Button(intent: ChangeLargePostIntent(direction: .previous)) {
@@ -391,26 +443,70 @@ struct logpocketWidgetEntryView: View {
     }
     
     @ViewBuilder
-    private func mediumPostRow(post: WidgetPost, rank: Int) -> some View {
+    private func mediumLeadPostCard(_ post: WidgetPost) -> some View {
         if let destination = appDeepLink(for: post) {
             Link(destination: destination) {
-                mediumPostRowContent(post: post, rank: rank)
+                mediumLeadCardContent(post)
             }
         } else {
-            mediumPostRowContent(post: post, rank: rank)
+            mediumLeadCardContent(post)
         }
     }
     
-    private func mediumPostRowContent(post: WidgetPost, rank: Int) -> some View {
+    private func mediumLeadCardContent(_ post: WidgetPost) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(post.title)
+                .font(.subheadline.weight(.semibold))
+                .lineLimit(2)
+            
+            Text(contentDigest(for: post))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+            
+            HStack(spacing: 6) {
+                insightChip(text: topicLabel(for: post), tint: accentColor, filled: true)
+                Text(readingHint(for: post))
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                Spacer(minLength: 2)
+                dateText(post.publishedDate)
+                    .font(.caption2)
+            }
+        }
+        .padding(9)
+        .background(accentColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+    
+    @ViewBuilder
+    private func mediumSecondaryPostCard(_ post: WidgetPost, rank: Int) -> some View {
+        if let destination = appDeepLink(for: post) {
+            Link(destination: destination) {
+                mediumSecondaryCardContent(post, rank: rank)
+            }
+        } else {
+            mediumSecondaryCardContent(post, rank: rank)
+        }
+    }
+    
+    private func mediumSecondaryCardContent(_ post: WidgetPost, rank: Int) -> some View {
         HStack(spacing: 7) {
             Text("\(rank)")
                 .font(.caption2.weight(.bold))
                 .foregroundStyle(accentColor)
-                .frame(width: 12, alignment: .leading)
+                .frame(width: 10, alignment: .leading)
             
-            Text(post.title)
-                .font(.caption.weight(.semibold))
-                .lineLimit(1)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(post.title)
+                    .font(.caption.weight(.semibold))
+                    .lineLimit(1)
+                Text(contentDigest(for: post))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
             
             Spacer(minLength: 4)
             
@@ -446,17 +542,25 @@ struct logpocketWidgetEntryView: View {
                 .lineLimit(3)
                 .multilineTextAlignment(.leading)
             
-            if let summary = post.summary, !summary.isEmpty {
-                Text(summary)
+            Text(contentDigest(for: post))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(5)
+                .multilineTextAlignment(.leading)
+            
+            HStack(spacing: 6) {
+                insightChip(text: topicLabel(for: post), tint: accentColor, filled: true)
+                insightChip(text: readingHint(for: post), tint: .secondary, filled: false)
+                if entry.isFromCache {
+                    insightChip(text: "캐시", tint: .secondary, filled: false)
+                }
+            }
+            
+            if post.summary == nil || post.summary?.isEmpty == true {
+                Text("요약이 없는 글은 제목 기반으로 핵심을 정리해 보여줘요.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .lineLimit(6)
-                    .multilineTextAlignment(.leading)
-            } else {
-                Text("요약이 없어도 탭하면 앱에서 해당 글 위치로 바로 이동해요.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(3)
+                    .lineLimit(2)
             }
         }
         .padding(12)
@@ -469,6 +573,41 @@ struct logpocketWidgetEntryView: View {
             ),
             in: RoundedRectangle(cornerRadius: 12, style: .continuous)
         )
+    }
+    
+    @ViewBuilder
+    private func largeRelatedPostRow(post: WidgetPost, rank: Int) -> some View {
+        if let destination = appDeepLink(for: post) {
+            Link(destination: destination) {
+                largeRelatedContent(post: post, rank: rank)
+            }
+        } else {
+            largeRelatedContent(post: post, rank: rank)
+        }
+    }
+    
+    private func largeRelatedContent(post: WidgetPost, rank: Int) -> some View {
+        HStack(spacing: 7) {
+            Text("\(rank)")
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(accentColor)
+                .frame(width: 10, alignment: .leading)
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text(post.title)
+                    .font(.caption.weight(.semibold))
+                    .lineLimit(1)
+                Text(contentDigest(for: post))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            
+            Spacer(minLength: 4)
+            
+            dateText(post.publishedDate)
+                .font(.caption2)
+        }
     }
     
     private func navigationButtonLabel(title: String, symbol: String, isLeading: Bool) -> some View {
@@ -525,6 +664,62 @@ struct logpocketWidgetEntryView: View {
             URLQueryItem(name: "platform", value: post.platform.deepLinkValue)
         ]
         return components.url
+    }
+    
+    private func contentDigest(for post: WidgetPost) -> String {
+        if let summary = post.summary?.trimmingCharacters(in: .whitespacesAndNewlines),
+           summary.count >= 18 {
+            return truncated(summary, limit: 130)
+        }
+        
+        let normalizedTitle = post.title
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        return "이 글은 \(truncated(normalizedTitle, limit: 42))에 대한 핵심 내용을 다뤄요."
+    }
+    
+    private func topicLabel(for post: WidgetPost) -> String {
+        let separators = CharacterSet(charactersIn: "-|:[]()·,/·•")
+        let tokens = post.title
+            .components(separatedBy: separators)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { $0.count >= 2 }
+        
+        let stopWords = ["정리", "후기", "기록", "문제", "풀이", "공유", "리뷰", "가이드"]
+        if let token = tokens.first(where: { !stopWords.contains($0) }) {
+            return truncated(token, limit: 10)
+        }
+        
+        return post.platform == .velog ? "Velog 글" : "Tistory 글"
+    }
+    
+    private func readingHint(for post: WidgetPost) -> String {
+        let baseText = post.summary?.isEmpty == false ? (post.summary ?? post.title) : post.title
+        let characters = max(baseText.count, 80)
+        let minutes = max(1, Int(ceil(Double(characters) / 180.0)))
+        return "\(minutes)분 읽기"
+    }
+    
+    private func truncated(_ text: String, limit: Int) -> String {
+        guard text.count > limit else { return text }
+        let head = text.prefix(limit)
+        return "\(head)…"
+    }
+    
+    private func insightChip(text: String, tint: Color, filled: Bool) -> some View {
+        Text(text)
+            .font(.caption2.weight(.semibold))
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
+            .allowsTightening(true)
+            .padding(.vertical, 4)
+            .padding(.horizontal, 7)
+            .background(
+                filled ? tint.opacity(0.18) : Color(.secondarySystemBackground),
+                in: Capsule()
+            )
+            .foregroundStyle(filled ? tint : .secondary)
     }
     
     private func dateText(_ date: Date?) -> Text {
@@ -801,19 +996,66 @@ enum WidgetFeedLoader {
     private static func makePosts(from items: [WidgetRSSItem], platform: WidgetPlatform) -> [WidgetPost] {
         let posts = items.compactMap { item -> WidgetPost? in
             guard let title = item.title, let link = item.link else { return nil }
+            let summary = normalizedSummary(title: title, rawSummary: item.summary)
             return WidgetPost(
                 id: link,
                 title: title,
                 url: link,
                 platform: platform,
                 publishedDate: item.publishedDate,
-                summary: item.summary
+                summary: summary
             )
         }
         
         return posts.sorted { left, right in
             (left.publishedDate ?? .distantPast) > (right.publishedDate ?? .distantPast)
         }
+    }
+    
+    private static func normalizedSummary(title: String, rawSummary: String?) -> String? {
+        guard let rawSummary else { return nil }
+        
+        var cleaned = rawSummary
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        guard !cleaned.isEmpty else { return nil }
+        
+        if cleaned.caseInsensitiveCompare(title) == .orderedSame {
+            return nil
+        }
+        
+        if cleaned.lowercased().hasPrefix(title.lowercased()) {
+            cleaned = String(cleaned.dropFirst(title.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        
+        guard !cleaned.isEmpty else { return nil }
+        
+        if let sentence = firstSentence(in: cleaned), sentence.count >= 14 {
+            return sentence
+        }
+        
+        return truncatedSummary(cleaned, limit: 140)
+    }
+    
+    private static func firstSentence(in text: String) -> String? {
+        let separators = ["다.", ". ", "! ", "? ", "요.", "\n"]
+        
+        for separator in separators {
+            if let range = text.range(of: separator) {
+                let candidate = String(text[..<range.upperBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+                if candidate.count >= 14 {
+                    return truncatedSummary(candidate, limit: 120)
+                }
+            }
+        }
+        
+        return nil
+    }
+    
+    private static func truncatedSummary(_ text: String, limit: Int) -> String {
+        guard text.count > limit else { return text }
+        return "\(text.prefix(limit))…"
     }
     
     private static func mergePosts(primary: [WidgetPost], secondary: [WidgetPost]) -> [WidgetPost] {
