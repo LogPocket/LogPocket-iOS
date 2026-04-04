@@ -11,6 +11,26 @@ enum BlogPlatform: String, CaseIterable, Codable {
     case tistory = "Tistory"
     case velog = "Velog"
     
+    var deepLinkValue: String {
+        switch self {
+        case .tistory:
+            return "tistory"
+        case .velog:
+            return "velog"
+        }
+    }
+    
+    init?(deepLinkValue: String) {
+        switch deepLinkValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "tistory":
+            self = .tistory
+        case "velog":
+            self = .velog
+        default:
+            return nil
+        }
+    }
+    
     var placeholder: String {
         switch self {
         case .tistory:

@@ -9,15 +9,51 @@ import Foundation
 import AppIntents
 
 private enum WidgetGroupConfig {
-    static let suiteName = "group.com.markrudy.logpockets"
+    static let suiteName = "group.com.markrudy.logpocket1"
+    static let widgetKind = "logpocketWidget"
     static let userSettingsKey = "userSettings"
+    static let selectedPlatformKey = "widgetSelectedPlatform"
+    static let appDeepLinkScheme = "logpocket"
+    static let appDeepLinkHost = "post"
     static let largePostOffsetKey = "widgetLargePostOffset"
     static let smallPostOffsetKey = "widgetSmallPostOffset"
+    static let cachedPostsTistoryKey = "widgetCachedPostsTistory"
+    static let cachedPostsVelogKey = "widgetCachedPostsVelog"
+    static let cachedUpdatedAtTistoryKey = "widgetCachedUpdatedAtTistory"
+    static let cachedUpdatedAtVelogKey = "widgetCachedUpdatedAtVelog"
+    static let maxPosts = 40
 }
 
-private enum WidgetPlatform: String, Codable {
+enum WidgetPlatform: String, Codable {
     case tistory = "Tistory"
     case velog = "Velog"
+    
+    var deepLinkValue: String {
+        switch self {
+        case .tistory:
+            return "tistory"
+        case .velog:
+            return "velog"
+        }
+    }
+    
+    var symbolName: String {
+        switch self {
+        case .tistory:
+            return "t.square.fill"
+        case .velog:
+            return "v.square.fill"
+        }
+    }
+    
+    var tint: Color {
+        switch self {
+        case .tistory:
+            return .orange
+        case .velog:
+            return .green
+        }
+    }
 }
 
 private struct WidgetUserSettings: Codable {
@@ -30,12 +66,36 @@ private struct WidgetUserSettings: Codable {
     var hasVelog: Bool { !(velogURL ?? "").isEmpty }
 }
 
-struct WidgetPost: Identifiable {
+private struct WidgetUserSettingsPayload: Decodable {
+    let tistoryURL: String?
+    let velogURL: String?
+    let hasCompletedOnboarding: Bool?
+    let preferredPlatform: String?
+}
+
+private struct WidgetCachedPost: Codable {
     let id: String
     let title: String
     let url: String
     let publishedDate: Date?
     let summary: String?
+}
+
+struct WidgetPost: Identifiable {
+    let id: String
+    let title: String
+    let url: String
+    let platform: WidgetPlatform
+    let publishedDate: Date?
+    let summary: String?
+}
+
+struct WidgetFeedResult {
+    let posts: [WidgetPost]
+    let platform: WidgetPlatform?
+    let lastUpdatedAt: Date?
+    let errorMessage: String?
+    let isFromCache: Bool
 }
 
 struct LogPocketEntry: TimelineEntry {
@@ -44,25 +104,42 @@ struct LogPocketEntry: TimelineEntry {
     let errorMessage: String?
     let largePostOffset: Int
     let smallPostOffset: Int
+    let platform: WidgetPlatform?
+    let lastUpdatedAt: Date?
+    let isFromCache: Bool
 }
 
 struct LogPocketProvider: TimelineProvider {
     func placeholder(in context: Context) -> LogPocketEntry {
-        LogPocketEntry(date: .now, posts: samplePosts, errorMessage: nil, largePostOffset: 0, smallPostOffset: 0)
+        LogPocketEntry(
+            date: .now,
+            posts: samplePosts,
+            errorMessage: nil,
+            largePostOffset: 0,
+            smallPostOffset: 0,
+            platform: .velog,
+            lastUpdatedAt: .now,
+            isFromCache: false
+        )
     }
     
     func getSnapshot(in context: Context, completion: @escaping (LogPocketEntry) -> Void) {
         Task {
-            let posts = await WidgetFeedLoader.loadPosts()
+            let result = await WidgetFeedLoader.loadFeed()
+            let posts = context.isPreview && result.posts.isEmpty ? samplePosts : result.posts
             let offset = WidgetFeedLoader.loadLargePostOffset()
             let smallOffset = WidgetFeedLoader.loadSmallPostOffset()
+            
             completion(
                 LogPocketEntry(
                     date: .now,
-                    posts: posts.isEmpty ? samplePosts : posts,
-                    errorMessage: posts.isEmpty ? "블로그 글을 불러오지 못했어요." : nil,
+                    posts: posts,
+                    errorMessage: result.errorMessage,
                     largePostOffset: offset,
-                    smallPostOffset: smallOffset
+                    smallPostOffset: smallOffset,
+                    platform: result.platform,
+                    lastUpdatedAt: result.lastUpdatedAt,
+                    isFromCache: result.isFromCache
                 )
             )
         }
@@ -70,51 +147,53 @@ struct LogPocketProvider: TimelineProvider {
     
     func getTimeline(in context: Context, completion: @escaping (Timeline<LogPocketEntry>) -> Void) {
         Task {
-            let posts = await WidgetFeedLoader.loadPosts()
+            let result = await WidgetFeedLoader.loadFeed()
             let offset = WidgetFeedLoader.loadLargePostOffset()
             let smallOffset = WidgetFeedLoader.loadSmallPostOffset()
+            
             let entry = LogPocketEntry(
                 date: .now,
-                posts: posts.isEmpty ? samplePosts : posts,
-                errorMessage: posts.isEmpty ? "블로그 글을 불러오지 못했어요." : nil,
+                posts: result.posts,
+                errorMessage: result.errorMessage,
                 largePostOffset: offset,
-                smallPostOffset: smallOffset
+                smallPostOffset: smallOffset,
+                platform: result.platform,
+                lastUpdatedAt: result.lastUpdatedAt,
+                isFromCache: result.isFromCache
             )
-            let nextRefresh = Calendar.current.date(byAdding: .minute, value: 30, to: .now) ?? .now.addingTimeInterval(1800)
+            
+            let nextRefresh = Calendar.current.date(byAdding: .minute, value: 10, to: .now) ?? .now.addingTimeInterval(600)
             completion(Timeline(entries: [entry], policy: .after(nextRefresh)))
         }
     }
     
     private var samplePosts: [WidgetPost] {
-        return LogPocketEntry(
-            date: .now,
-            posts: [
+        [
             WidgetPost(
                 id: "sample-1",
                 title: "백준 1234번 - DP 풀이 정리",
                 url: "https://example.com",
+                platform: .velog,
                 publishedDate: Date(),
                 summary: "동적 계획법으로 문제를 해결한 과정을 정리했습니다."
             ),
             WidgetPost(
                 id: "sample-2",
-                title: "제주도 여행 3일차 기록",
+                title: "SwiftUI 상태 관리 정리",
                 url: "https://example.com",
+                platform: .velog,
                 publishedDate: Date().addingTimeInterval(-86400),
-                summary: "비 오는 날 우도에서 본 풍경과 식당 기록."
+                summary: "State, Observable, Environment 흐름 요약."
             ),
             WidgetPost(
                 id: "sample-3",
-                title: "SwiftUI 상태 관리 정리",
+                title: "제주도 여행 3일차 기록",
                 url: "https://example.com",
+                platform: .tistory,
                 publishedDate: Date().addingTimeInterval(-172800),
-                summary: "State, Observable, Environment 흐름 요약."
+                summary: "비 오는 날 우도에서 본 풍경과 식당 기록."
             )
-            ],
-            errorMessage: nil,
-            largePostOffset: 0,
-            smallPostOffset: 0
-        ).posts
+        ]
     }
 }
 
@@ -133,230 +212,545 @@ struct logpocketWidgetEntryView: View {
         }
     }
     
+    private var accentColor: Color {
+        entry.platform?.tint ?? .accentColor
+    }
+    
+    private var platformLabel: String {
+        entry.platform?.rawValue ?? "Blog"
+    }
+    
+    private var smallIndex: Int {
+        guard !entry.posts.isEmpty else { return 0 }
+        let count = entry.posts.count
+        return ((entry.smallPostOffset % count) + count) % count
+    }
+    
+    private var selectedSmallPost: WidgetPost? {
+        guard !entry.posts.isEmpty else { return nil }
+        return entry.posts[smallIndex]
+    }
+    
+    private var largeIndex: Int {
+        guard !entry.posts.isEmpty else { return 0 }
+        let count = entry.posts.count
+        return ((entry.largePostOffset % count) + count) % count
+    }
+    
+    private var focusedLargePost: WidgetPost? {
+        guard !entry.posts.isEmpty else { return nil }
+        return entry.posts[largeIndex]
+    }
+    
+    private var largeProgressLabel: String {
+        guard !entry.posts.isEmpty else { return "0/0" }
+        return "\(largeIndex + 1)/\(entry.posts.count)"
+    }
+    
+    private var mediumLeadPost: WidgetPost? {
+        entry.posts.first
+    }
+    
+    private var mediumSecondaryPosts: [WidgetPost] {
+        Array(entry.posts.dropFirst().prefix(2))
+    }
+    
+    private struct RankedWidgetPost: Identifiable {
+        let post: WidgetPost
+        let rank: Int
+        var id: String { post.id }
+    }
+    
+    private var largeRelatedPosts: [RankedWidgetPost] {
+        guard !entry.posts.isEmpty else { return [] }
+        let limit = min(3, max(0, entry.posts.count - 1))
+        guard limit > 0 else { return [] }
+        
+        return (1...limit).map { offset in
+            let index = (largeIndex + offset) % entry.posts.count
+            return RankedWidgetPost(
+                post: entry.posts[index],
+                rank: index + 1
+            )
+        }
+    }
+    
+    private var syncStatusText: String {
+        if let lastUpdatedAt = entry.lastUpdatedAt {
+            let relative = Self.relativeFormatter.localizedString(for: lastUpdatedAt, relativeTo: entry.date)
+            return entry.isFromCache ? "캐시 · \(relative)" : "업데이트 \(relative)"
+        }
+        return entry.isFromCache ? "캐시 데이터" : "업데이트 대기"
+    }
+    
     private var smallWidget: some View {
         ZStack(alignment: .bottomTrailing) {
             Group {
                 if let post = selectedSmallPost {
-                    smallWidgetFilledContent(post: post)
+                    VStack(alignment: .leading, spacing: 7) {
+                        headerBadge(label: platformLabel, detail: "\(smallIndex + 1)/\(entry.posts.count)")
+                        
+                        Text(post.title)
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(.primary)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                        
+                        Text(contentDigest(for: post))
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                        
+                        HStack(spacing: 6) {
+                            insightChip(text: topicLabel(for: post), tint: accentColor, filled: true)
+                            Text(readingHint(for: post))
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
+                        }
+                        
+                        Spacer(minLength: 0)
+                        
+                        HStack(spacing: 6) {
+                            dateText(post.publishedDate)
+                                .font(.caption2)
+                            if entry.isFromCache {
+                                Text("캐시")
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    .padding(10)
                 } else {
                     emptyState
-                        .padding(.trailing, 14)
+                        .padding(10)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             
             Button(intent: RefreshWidgetTimelineIntent()) {
-                Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 32, height: 32)
-                    .contentShape(Rectangle())
+                Image(systemName: "arrow.clockwise.circle.fill")
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(accentColor)
             }
             .buttonStyle(.plain)
-            .padding(.trailing, 4)
-            .padding(.bottom, 4)
+            .padding(8)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .widgetURL(selectedSmallPost.flatMap { URL(string: $0.url) })
+        .widgetURL(selectedSmallPost.flatMap { appDeepLink(for: $0) })
     }
-    
-    private var selectedSmallPost: WidgetPost? {
-        guard !entry.posts.isEmpty else { return nil }
-        let count = entry.posts.count
-        let normalizedIndex = ((entry.smallPostOffset % count) + count) % count
-        return entry.posts[normalizedIndex]
-    }
-    
-    private func smallWidgetFilledContent(post: WidgetPost) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            smallWidgetHeaderRow
-            
-            Spacer(minLength: 4)
-            
-            Text(post.title)
-                .font(.system(size: 16, weight: .bold))
-                .foregroundStyle(.primary)
-                .lineLimit(3)
-                .multilineTextAlignment(.leading)
-                .fixedSize(horizontal: false, vertical: true)
-            
-            Text(Self.smallWidgetDateFormatter.string(from: post.publishedDate ?? entry.date))
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-                .padding(.top, 4)
-            
-            Spacer(minLength: 0)
-        }
-        .padding(.top, 6)
-        .padding(.leading, 6)
-        .padding(.trailing, 24)
-        .padding(.bottom, 5)
-    }
-    
-    private var smallWidgetHeaderRow: some View {
-        HStack(spacing: 6) {
-            RoundedRectangle(cornerRadius: 5, style: .continuous)
-                .fill(Color(red: 46 / 255, green: 204 / 255, blue: 113 / 255))
-                .frame(width: 18, height: 18)
-                .overlay {
-                    Text("V")
-                        .font(.caption2.bold())
-                        .foregroundStyle(.white)
-                }
-            Text("나의 기록")
-                .font(.caption)
-                .foregroundStyle(Color(white: 0.53))
-        }
-    }
-    
-    private static let smallWidgetDateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "ko_KR")
-        f.dateFormat = "yyyy. MM. dd"
-        return f
-    }()
     
     private var mediumWidget: some View {
-        ZStack {
-            Color.clear
+        VStack(alignment: .leading, spacing: 7) {
+            headerBadge(label: "\(platformLabel) 최근 글", detail: syncStatusText, showsRefreshButton: true)
+            
             if entry.posts.isEmpty {
                 emptyState
             } else {
-                VStack(alignment: .leading, spacing: 7) {
-                    headerBadge(label: "최근 글")
-                    ForEach(Array(entry.posts.prefix(3)).indices, id: \.self) { idx in
-                        let post = entry.posts[idx]
-                        HStack(spacing: 6) {
-                            Circle()
-                                .fill(Color.accentColor.opacity(0.2))
-                                .frame(width: 7, height: 7)
-                            Text(post.title)
-                                .font(.subheadline.weight(.semibold))
-                                .lineLimit(1)
-                            Spacer(minLength: 4)
-                            dateText(post.publishedDate)
-                                .font(.caption2)
-                        }
-                    }
+                if let lead = mediumLeadPost {
+                    mediumLeadPostCard(lead)
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 7)
+                
+                ForEach(Array(mediumSecondaryPosts.enumerated()), id: \.element.id) { index, post in
+                    mediumSecondaryPostCard(post, rank: index + 2)
+                }
+                
+                if entry.posts.count > 3 {
+                    Text("+\(entry.posts.count - 3)개 더")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .widgetURL(entry.posts.first.flatMap { URL(string: $0.url) })
+        .padding(10)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
     
     private var largeWidget: some View {
-        ZStack {
-            Color.clear
-            if let selectedPost = selectedLargePost {
-                VStack(alignment: .leading, spacing: 10) {
-                    headerBadge(label: "추억 회선")
-                    Text(selectedPost.title)
-                        .font(.headline)
-                        .lineLimit(3)
-                    dateText(selectedPost.publishedDate)
-                        .font(.caption)
-                    if let summary = selectedPost.summary, !summary.isEmpty {
-                        Text(summary)
-                            .font(.system(size: 14))
+        VStack(alignment: .leading, spacing: 8) {
+            headerBadge(
+                label: "\(platformLabel) 집중 보기",
+                detail: "\(largeProgressLabel) · \(syncStatusText)",
+                showsRefreshButton: true
+            )
+            
+            largePlatformSelector
+            
+            if let primary = focusedLargePost {
+                largeFocusedPost(primary)
+                
+                if !largeRelatedPosts.isEmpty {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("관련 글")
+                            .font(.caption.weight(.semibold))
                             .foregroundStyle(.secondary)
-                            .lineLimit(8)
-                    }
-                    
-                    Spacer(minLength: 0)
-                    
-                    HStack(spacing: 10) {
-                        Button(intent: ChangeLargePostIntent(direction: .previous)) {
-                            navigationButtonLabel(title: "Previous", symbol: "chevron.left", isLeading: true)
-                        }
-                        .buttonStyle(.plain)
                         
-                        Button(intent: ChangeLargePostIntent(direction: .next)) {
-                            navigationButtonLabel(title: "Next", symbol: "chevron.right", isLeading: false)
+                        ForEach(largeRelatedPosts) { item in
+                            largeRelatedPostRow(post: item.post, rank: item.rank)
                         }
-                        .buttonStyle(.plain)
                     }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .padding(16)
+                
+                HStack(spacing: 8) {
+                    Button(intent: ChangeLargePostIntent(direction: .previous)) {
+                        navigationButtonLabel(title: "이전", symbol: "chevron.left", isLeading: true)
+                    }
+                    .buttonStyle(.plain)
+                    
+                    Button(intent: ChangeLargePostIntent(direction: .next)) {
+                        navigationButtonLabel(title: "다음", symbol: "chevron.right", isLeading: false)
+                    }
+                    .buttonStyle(.plain)
+                }
             } else {
                 emptyState
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .widgetURL(selectedLargePost.flatMap { URL(string: $0.url) })
+        .padding(12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
     
-    private var selectedLargePost: WidgetPost? {
-        guard !entry.posts.isEmpty else { return nil }
-        let count = entry.posts.count
-        let normalizedIndex = ((entry.largePostOffset % count) + count) % count
-        return entry.posts[normalizedIndex]
-    }
-    
-    private func navigationButtonLabel(title: String, symbol: String, isLeading: Bool) -> some View {
+    private var largePlatformSelector: some View {
         HStack(spacing: 6) {
-            if isLeading {
-                Image(systemName: symbol)
+            platformSelectionButton(.velog)
+            platformSelectionButton(.tistory)
+            Spacer(minLength: 0)
+        }
+    }
+    
+    private func platformSelectionButton(_ platform: WidgetPlatform) -> some View {
+        let isSelected = entry.platform == platform
+        
+        return Button(intent: SetWidgetPlatformIntent(platform: platform)) {
+            HStack(spacing: 4) {
+                Image(systemName: platform.symbolName)
+                    .font(.caption2.weight(.semibold))
+                Text(platform.rawValue)
+                    .font(.caption2.weight(.semibold))
             }
-            Text(title)
-                .font(.caption.weight(.semibold))
-            if !isLeading {
-                Image(systemName: symbol)
+            .padding(.vertical, 5)
+            .padding(.horizontal, 8)
+            .background(
+                isSelected ? platform.tint.opacity(0.2) : Color(.secondarySystemBackground),
+                in: Capsule()
+            )
+            .foregroundStyle(isSelected ? platform.tint : .secondary)
+        }
+        .buttonStyle(.plain)
+    }
+    
+    @ViewBuilder
+    private func mediumLeadPostCard(_ post: WidgetPost) -> some View {
+        if let destination = appDeepLink(for: post) {
+            Link(destination: destination) {
+                mediumLeadCardContent(post)
+            }
+        } else {
+            mediumLeadCardContent(post)
+        }
+    }
+    
+    private func mediumLeadCardContent(_ post: WidgetPost) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(post.title)
+                .font(.subheadline.weight(.semibold))
+                .lineLimit(2)
+            
+            Text(contentDigest(for: post))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+            
+            HStack(spacing: 6) {
+                insightChip(text: topicLabel(for: post), tint: accentColor, filled: true)
+                Text(readingHint(for: post))
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                Spacer(minLength: 2)
+                dateText(post.publishedDate)
+                    .font(.caption2)
             }
         }
-        .foregroundStyle(.white.opacity(0.92))
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 9)
+        .padding(9)
+        .background(accentColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+    
+    @ViewBuilder
+    private func mediumSecondaryPostCard(_ post: WidgetPost, rank: Int) -> some View {
+        if let destination = appDeepLink(for: post) {
+            Link(destination: destination) {
+                mediumSecondaryCardContent(post, rank: rank)
+            }
+        } else {
+            mediumSecondaryCardContent(post, rank: rank)
+        }
+    }
+    
+    private func mediumSecondaryCardContent(_ post: WidgetPost, rank: Int) -> some View {
+        HStack(spacing: 7) {
+            Text("\(rank)")
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(accentColor)
+                .frame(width: 10, alignment: .leading)
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text(post.title)
+                    .font(.caption.weight(.semibold))
+                    .lineLimit(1)
+                Text(contentDigest(for: post))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            
+            Spacer(minLength: 4)
+            
+            dateText(post.publishedDate)
+                .font(.caption2)
+        }
+    }
+    
+    @ViewBuilder
+    private func largeFocusedPost(_ post: WidgetPost) -> some View {
+        if let destination = appDeepLink(for: post) {
+            Link(destination: destination) {
+                largeFocusedCard(post)
+            }
+        } else {
+            largeFocusedCard(post)
+        }
+    }
+    
+    private func largeFocusedCard(_ post: WidgetPost) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                Label("앱에서 바로 이동", systemImage: "location.fill")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(accentColor)
+                Spacer(minLength: 6)
+                dateText(post.publishedDate)
+                    .font(.caption2)
+            }
+            
+            Text(post.title)
+                .font(.headline.weight(.semibold))
+                .lineLimit(3)
+                .multilineTextAlignment(.leading)
+            
+            Text(contentDigest(for: post))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(5)
+                .multilineTextAlignment(.leading)
+            
+            HStack(spacing: 6) {
+                insightChip(text: topicLabel(for: post), tint: accentColor, filled: true)
+                insightChip(text: readingHint(for: post), tint: .secondary, filled: false)
+                if entry.isFromCache {
+                    insightChip(text: "캐시", tint: .secondary, filled: false)
+                }
+            }
+            
+            if post.summary == nil || post.summary?.isEmpty == true {
+                Text("요약이 없는 글은 제목 기반으로 핵심을 정리해 보여줘요.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         .background(
             LinearGradient(
-                colors: [Color.gray.opacity(0.78), Color.gray.opacity(0.58)],
-                startPoint: .top,
-                endPoint: .bottom
+                colors: [accentColor.opacity(0.16), accentColor.opacity(0.07)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
             ),
             in: RoundedRectangle(cornerRadius: 12, style: .continuous)
         )
     }
     
-    private func headerBadge(label: String) -> some View {
-        HStack(spacing: 6) {
-            RoundedRectangle(cornerRadius: 5, style: .continuous)
-                .fill(Color.green.opacity(0.2))
-                .frame(width: 18, height: 18)
-                .overlay {
-                    Text("V")
-                        .font(.caption2.bold())
-                        .foregroundStyle(.green)
-                }
-            Text(label)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+    @ViewBuilder
+    private func largeRelatedPostRow(post: WidgetPost, rank: Int) -> some View {
+        if let destination = appDeepLink(for: post) {
+            Link(destination: destination) {
+                largeRelatedContent(post: post, rank: rank)
+            }
+        } else {
+            largeRelatedContent(post: post, rank: rank)
         }
     }
     
+    private func largeRelatedContent(post: WidgetPost, rank: Int) -> some View {
+        HStack(spacing: 7) {
+            Text("\(rank)")
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(accentColor)
+                .frame(width: 10, alignment: .leading)
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text(post.title)
+                    .font(.caption.weight(.semibold))
+                    .lineLimit(1)
+                Text(contentDigest(for: post))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            
+            Spacer(minLength: 4)
+            
+            dateText(post.publishedDate)
+                .font(.caption2)
+        }
+    }
+    
+    private func navigationButtonLabel(title: String, symbol: String, isLeading: Bool) -> some View {
+        HStack(spacing: 5) {
+            if isLeading { Image(systemName: symbol) }
+            Text(title)
+                .font(.caption.weight(.semibold))
+            if !isLeading { Image(systemName: symbol) }
+        }
+        .foregroundStyle(.white.opacity(0.95))
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 7)
+        .background(
+            LinearGradient(
+                colors: [accentColor.opacity(0.95), accentColor.opacity(0.75)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
+            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+        )
+    }
+    
+    private func headerBadge(label: String, detail: String, showsRefreshButton: Bool = false) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: entry.platform?.symbolName ?? "doc.text.fill")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(accentColor)
+            Text(label)
+                .font(.caption.weight(.semibold))
+                .lineLimit(1)
+            Spacer(minLength: 6)
+            Text(detail)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            
+            if showsRefreshButton {
+                Button(intent: RefreshWidgetTimelineIntent()) {
+                    Image(systemName: "arrow.clockwise.circle.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(accentColor)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+    
+    private func appDeepLink(for post: WidgetPost) -> URL? {
+        var components = URLComponents()
+        components.scheme = WidgetGroupConfig.appDeepLinkScheme
+        components.host = WidgetGroupConfig.appDeepLinkHost
+        components.queryItems = [
+            URLQueryItem(name: "url", value: post.url),
+            URLQueryItem(name: "platform", value: post.platform.deepLinkValue)
+        ]
+        return components.url
+    }
+    
+    private func contentDigest(for post: WidgetPost) -> String {
+        if let summary = post.summary?.trimmingCharacters(in: .whitespacesAndNewlines),
+           summary.count >= 18 {
+            return truncated(summary, limit: 130)
+        }
+        
+        let normalizedTitle = post.title
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        return "이 글은 \(truncated(normalizedTitle, limit: 42))에 대한 핵심 내용을 다뤄요."
+    }
+    
+    private func topicLabel(for post: WidgetPost) -> String {
+        let separators = CharacterSet(charactersIn: "-|:[]()·,/·•")
+        let tokens = post.title
+            .components(separatedBy: separators)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { $0.count >= 2 }
+        
+        let stopWords = ["정리", "후기", "기록", "문제", "풀이", "공유", "리뷰", "가이드"]
+        if let token = tokens.first(where: { !stopWords.contains($0) }) {
+            return truncated(token, limit: 10)
+        }
+        
+        return post.platform == .velog ? "Velog 글" : "Tistory 글"
+    }
+    
+    private func readingHint(for post: WidgetPost) -> String {
+        let baseText = post.summary?.isEmpty == false ? (post.summary ?? post.title) : post.title
+        let characters = max(baseText.count, 80)
+        let minutes = max(1, Int(ceil(Double(characters) / 180.0)))
+        return "\(minutes)분 읽기"
+    }
+    
+    private func truncated(_ text: String, limit: Int) -> String {
+        guard text.count > limit else { return text }
+        let head = text.prefix(limit)
+        return "\(head)…"
+    }
+    
+    private func insightChip(text: String, tint: Color, filled: Bool) -> some View {
+        Text(text)
+            .font(.caption2.weight(.semibold))
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
+            .allowsTightening(true)
+            .padding(.vertical, 4)
+            .padding(.horizontal, 7)
+            .background(
+                filled ? tint.opacity(0.18) : Color(.secondarySystemBackground),
+                in: Capsule()
+            )
+            .foregroundStyle(filled ? tint : .secondary)
+    }
+    
     private func dateText(_ date: Date?) -> Text {
-        guard let date else { return Text("") }
+        guard let date else { return Text("-") }
         return Text(date, style: .date)
             .foregroundStyle(.secondary)
     }
     
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("LogPocket")
+            Label("LogPocket", systemImage: "book.pages")
                 .font(.headline)
-            Text(entry.errorMessage ?? "온보딩에서 블로그 아이디를 먼저 입력해 주세요.")
+                .foregroundStyle(accentColor)
+            Text(entry.errorMessage ?? "앱에서 블로그를 연결한 뒤 홈 화면을 새로고침해 주세요.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .lineLimit(3)
             Spacer(minLength: 0)
         }
-        .padding(8)
     }
+    
+    private static let relativeFormatter: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .short
+        formatter.locale = Locale(identifier: "ko_KR")
+        return formatter
+    }()
 }
 
 struct logpocketWidget: Widget {
-    let kind: String = "logpocketWidget"
+    let kind: String = WidgetGroupConfig.widgetKind
     
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: kind, provider: LogPocketProvider()) { entry in
@@ -364,42 +758,217 @@ struct logpocketWidget: Widget {
                 .containerBackground(.fill.tertiary, for: .widget)
         }
         .configurationDisplayName("LogPocket")
-        .description("블로그 최신 글을 홈 화면에서 바로 확인하세요.")
+        .description("앱의 최신 블로그 글을 빠르게 확인하고 바로 열어보세요.")
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
     }
 }
 
 enum WidgetFeedLoader {
-    static func loadPosts() async -> [WidgetPost] {
-        guard let settings = loadSettings() else { return [] }
-        guard let feedURL = buildFeedURL(from: settings) else { return [] }
+    static func loadFeed() async -> WidgetFeedResult {
+        let hasSharedDefaults = sharedDefaults() != nil
+        let settings = loadSettings()
+        let resolvedPlatform = settings.flatMap { resolvePlatform(from: $0) }
+        let cached = loadCachedSnapshot(preferred: resolvedPlatform)
+        
+        guard let settings else {
+            if cached.posts.isEmpty {
+                return WidgetFeedResult(
+                    posts: [],
+                    platform: nil,
+                    lastUpdatedAt: nil,
+                    errorMessage: hasSharedDefaults
+                        ? "앱에서 블로그 링크를 먼저 등록해 주세요."
+                        : "앱/위젯 App Groups 권한을 활성화해 주세요.",
+                    isFromCache: false
+                )
+            }
+            
+            return WidgetFeedResult(
+                posts: cached.posts,
+                platform: cached.platform,
+                lastUpdatedAt: cached.updatedAt,
+                errorMessage: "설정 정보를 찾지 못해 마지막 동기화 글을 표시해요.",
+                isFromCache: true
+            )
+        }
+        
+        guard let platform = resolvedPlatform else {
+            if cached.posts.isEmpty {
+                return WidgetFeedResult(
+                    posts: [],
+                    platform: nil,
+                    lastUpdatedAt: nil,
+                    errorMessage: "표시할 블로그 플랫폼이 없습니다.",
+                    isFromCache: false
+                )
+            }
+            
+            return WidgetFeedResult(
+                posts: cached.posts,
+                platform: cached.platform,
+                lastUpdatedAt: cached.updatedAt,
+                errorMessage: "마지막 동기화 글을 표시 중이에요.",
+                isFromCache: true
+            )
+        }
+        
+        guard let feedURL = buildFeedURL(from: settings, platform: platform) else {
+            if cached.posts.isEmpty {
+                return WidgetFeedResult(
+                    posts: [],
+                    platform: platform,
+                    lastUpdatedAt: nil,
+                    errorMessage: "블로그 링크 형식을 확인해 주세요.",
+                    isFromCache: false
+                )
+            }
+            
+            return WidgetFeedResult(
+                posts: cached.posts,
+                platform: cached.platform ?? platform,
+                lastUpdatedAt: cached.updatedAt,
+                errorMessage: "마지막 동기화 글을 표시 중이에요.",
+                isFromCache: true
+            )
+        }
         
         do {
             let (data, _) = try await URLSession.shared.data(from: feedURL)
             let items = WidgetRSSParser.parse(data)
+            let fetchedPosts = makePosts(from: items, platform: platform)
             
-            return items.compactMap { item in
-                guard let title = item.title, let link = item.link else { return nil }
-                return WidgetPost(
-                    id: link,
-                    title: title,
-                    url: link,
-                    publishedDate: item.publishedDate,
-                    summary: item.summary
+            if fetchedPosts.isEmpty {
+                if cached.posts.isEmpty {
+                    return WidgetFeedResult(
+                        posts: [],
+                        platform: platform,
+                        lastUpdatedAt: nil,
+                        errorMessage: "새 글을 찾지 못했어요.",
+                        isFromCache: false
+                    )
+                }
+                
+                return WidgetFeedResult(
+                    posts: cached.posts,
+                    platform: cached.platform ?? platform,
+                    lastUpdatedAt: cached.updatedAt,
+                    errorMessage: "새 글을 가져오지 못해 캐시를 보여줘요.",
+                    isFromCache: true
                 )
             }
+            
+            let mergedPosts = mergePosts(primary: fetchedPosts, secondary: cached.posts)
+            saveCachedPosts(mergedPosts, for: platform)
+            
+            return WidgetFeedResult(
+                posts: mergedPosts,
+                platform: platform,
+                lastUpdatedAt: .now,
+                errorMessage: nil,
+                isFromCache: false
+            )
         } catch {
-            return []
+            if cached.posts.isEmpty {
+                return WidgetFeedResult(
+                    posts: [],
+                    platform: platform,
+                    lastUpdatedAt: nil,
+                    errorMessage: "네트워크 오류로 글을 불러오지 못했어요.",
+                    isFromCache: false
+                )
+            }
+            
+            return WidgetFeedResult(
+                posts: cached.posts,
+                platform: cached.platform ?? platform,
+                lastUpdatedAt: cached.updatedAt,
+                errorMessage: "오프라인 상태라 캐시 글을 표시해요.",
+                isFromCache: true
+            )
         }
     }
     
     private static func loadSettings() -> WidgetUserSettings? {
-        let defaults = UserDefaults(suiteName: WidgetGroupConfig.suiteName) ?? .standard
-        guard let data = defaults.data(forKey: WidgetGroupConfig.userSettingsKey),
-              let settings = try? JSONDecoder().decode(WidgetUserSettings.self, from: data) else {
+        guard let defaults = sharedDefaults() else {
             return nil
         }
-        return settings
+        
+        guard let data = defaults.data(forKey: WidgetGroupConfig.userSettingsKey) else {
+            return nil
+        }
+        
+        if let settings = try? JSONDecoder().decode(WidgetUserSettings.self, from: data) {
+            return settings
+        }
+        
+        guard let payload = try? JSONDecoder().decode(WidgetUserSettingsPayload.self, from: data) else {
+            return nil
+        }
+        
+        return WidgetUserSettings(
+            tistoryURL: payload.tistoryURL,
+            velogURL: payload.velogURL,
+            hasCompletedOnboarding: payload.hasCompletedOnboarding ?? false,
+            preferredPlatform: platform(from: payload.preferredPlatform)
+        )
+    }
+    
+    private static func sharedDefaults() -> UserDefaults? {
+        UserDefaults(suiteName: WidgetGroupConfig.suiteName)
+    }
+    
+    private static func resolvePlatform(from settings: WidgetUserSettings) -> WidgetPlatform? {
+        if let selected = loadSelectedPlatform(),
+           buildFeedURL(from: settings, platform: selected) != nil {
+            return selected
+        }
+        
+        if let preferred = settings.preferredPlatform,
+           buildFeedURL(from: settings, platform: preferred) != nil {
+            return preferred
+        }
+        
+        if buildFeedURL(from: settings, platform: .tistory) != nil {
+            return .tistory
+        }
+        
+        if buildFeedURL(from: settings, platform: .velog) != nil {
+            return .velog
+        }
+        
+        return nil
+    }
+    
+    static func setSelectedPlatform(_ platform: WidgetPlatform) {
+        guard let defaults = sharedDefaults() else { return }
+        defaults.set(platform.deepLinkValue, forKey: WidgetGroupConfig.selectedPlatformKey)
+        defaults.set(0, forKey: WidgetGroupConfig.largePostOffsetKey)
+    }
+    
+    private static func loadSelectedPlatform() -> WidgetPlatform? {
+        guard let defaults = sharedDefaults(),
+              let raw = defaults.string(forKey: WidgetGroupConfig.selectedPlatformKey) else {
+            return nil
+        }
+        return platform(from: raw)
+    }
+    
+    private static func platform(from rawValue: String?) -> WidgetPlatform? {
+        guard let normalized = rawValue?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased(),
+              !normalized.isEmpty else {
+            return nil
+        }
+        
+        switch normalized {
+        case "tistory":
+            return .tistory
+        case "velog":
+            return .velog
+        default:
+            return nil
+        }
     }
     
     static func loadLargePostOffset() -> Int {
@@ -424,23 +993,270 @@ enum WidgetFeedLoader {
         defaults.set(current + delta, forKey: WidgetGroupConfig.smallPostOffsetKey)
     }
     
-    private static func buildFeedURL(from settings: WidgetUserSettings) -> URL? {
-        let platform = settings.preferredPlatform
-            ?? (settings.hasTistory ? .tistory : (settings.hasVelog ? .velog : nil))
+    private static func makePosts(from items: [WidgetRSSItem], platform: WidgetPlatform) -> [WidgetPost] {
+        let posts = items.compactMap { item -> WidgetPost? in
+            guard let title = item.title, let link = item.link else { return nil }
+            let summary = normalizedSummary(title: title, rawSummary: item.summary)
+            return WidgetPost(
+                id: link,
+                title: title,
+                url: link,
+                platform: platform,
+                publishedDate: item.publishedDate,
+                summary: summary
+            )
+        }
         
+        return posts.sorted { left, right in
+            (left.publishedDate ?? .distantPast) > (right.publishedDate ?? .distantPast)
+        }
+    }
+    
+    private static func normalizedSummary(title: String, rawSummary: String?) -> String? {
+        guard let rawSummary else { return nil }
+        
+        var cleaned = rawSummary
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        guard !cleaned.isEmpty else { return nil }
+        
+        if cleaned.caseInsensitiveCompare(title) == .orderedSame {
+            return nil
+        }
+        
+        if cleaned.lowercased().hasPrefix(title.lowercased()) {
+            cleaned = String(cleaned.dropFirst(title.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        
+        guard !cleaned.isEmpty else { return nil }
+        
+        if let sentence = firstSentence(in: cleaned), sentence.count >= 14 {
+            return sentence
+        }
+        
+        return truncatedSummary(cleaned, limit: 140)
+    }
+    
+    private static func firstSentence(in text: String) -> String? {
+        let separators = ["다.", ". ", "! ", "? ", "요.", "\n"]
+        
+        for separator in separators {
+            if let range = text.range(of: separator) {
+                let candidate = String(text[..<range.upperBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+                if candidate.count >= 14 {
+                    return truncatedSummary(candidate, limit: 120)
+                }
+            }
+        }
+        
+        return nil
+    }
+    
+    private static func truncatedSummary(_ text: String, limit: Int) -> String {
+        guard text.count > limit else { return text }
+        return "\(text.prefix(limit))…"
+    }
+    
+    private static func mergePosts(primary: [WidgetPost], secondary: [WidgetPost]) -> [WidgetPost] {
+        var seen = Set<String>()
+        let merged = (primary + secondary).filter { post in
+            seen.insert(post.id).inserted
+        }
+        
+        let sorted = merged.sorted { left, right in
+            (left.publishedDate ?? .distantPast) > (right.publishedDate ?? .distantPast)
+        }
+        
+        return Array(sorted.prefix(WidgetGroupConfig.maxPosts))
+    }
+    
+    private static func saveCachedPosts(_ posts: [WidgetPost], for platform: WidgetPlatform) {
+        let defaults = UserDefaults(suiteName: WidgetGroupConfig.suiteName) ?? .standard
+        let cache = posts.map { post in
+            WidgetCachedPost(
+                id: post.id,
+                title: post.title,
+                url: post.url,
+                publishedDate: post.publishedDate,
+                summary: post.summary
+            )
+        }
+        
+        guard let data = try? JSONEncoder().encode(cache) else { return }
+        defaults.set(data, forKey: cachedPostsKey(for: platform))
+        defaults.set(Date(), forKey: cachedUpdatedAtKey(for: platform))
+    }
+    
+    private static func buildFeedURL(from settings: WidgetUserSettings, platform: WidgetPlatform) -> URL? {
         switch platform {
         case .tistory:
-            let sourceURL = (settings.tistoryURL ?? "").trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-            guard !sourceURL.isEmpty else { return nil }
-            return URL(string: "\(sourceURL)/rss")
+            guard let id = tistoryID(from: settings.tistoryURL ?? ""), !id.isEmpty else { return nil }
+            return URL(string: "https://\(id).tistory.com/rss")
         case .velog:
-            let sourceURL = settings.velogURL ?? ""
-            guard let atRange = sourceURL.range(of: "@") else { return nil }
-            let suffix = sourceURL[atRange.upperBound...]
-            guard let id = suffix.split(separator: "/").first.map(String.init), !id.isEmpty else { return nil }
+            guard let id = velogID(from: settings.velogURL ?? ""), !id.isEmpty else { return nil }
             return URL(string: "https://v2.velog.io/rss/\(id)")
-        case nil:
-            return nil
+        }
+    }
+    
+    private static func tistoryID(from raw: String) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        
+        if let host = host(from: trimmed),
+           let range = host.range(of: ".tistory.com", options: [.caseInsensitive]) {
+            return normalizedIdentifier(String(host[..<range.lowerBound]))
+        }
+        
+        if let range = trimmed.range(of: ".tistory.com", options: [.caseInsensitive]) {
+            let prefix = trimmed[..<range.lowerBound]
+            let token = prefix.split(separator: "/").last.map(String.init) ?? String(prefix)
+            return normalizedIdentifier(token)
+        }
+        
+        return normalizedIdentifier(trimmed)
+    }
+    
+    private static func velogID(from raw: String) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        
+        if let host = host(from: trimmed),
+           host.lowercased().contains("velog.io"),
+           let pathID = firstPathComponent(from: trimmed) {
+            return normalizedIdentifier(pathID.replacingOccurrences(of: "@", with: ""))
+        }
+        
+        if let atRange = trimmed.range(of: "@") {
+            let suffix = trimmed[atRange.upperBound...]
+            return normalizedIdentifier(firstToken(in: String(suffix)))
+        }
+        
+        if let range = trimmed.range(of: "velog.io/", options: [.caseInsensitive]) {
+            let suffix = trimmed[range.upperBound...]
+            return normalizedIdentifier(firstToken(in: String(suffix)))
+        }
+        
+        return normalizedIdentifier(trimmed.replacingOccurrences(of: "@", with: ""))
+    }
+    
+    private static func host(from raw: String) -> String? {
+        if let host = URL(string: raw)?.host {
+            return host
+        }
+        
+        return URL(string: "https://\(raw)")?.host
+    }
+    
+    private static func firstPathComponent(from raw: String) -> String? {
+        let normalized = raw.hasPrefix("http://") || raw.hasPrefix("https://")
+            ? raw
+            : "https://\(raw)"
+        guard let components = URLComponents(string: normalized) else { return nil }
+        return components.path.split(separator: "/").first.map(String.init)
+    }
+    
+    private static func firstToken(in raw: String) -> String {
+        raw
+            .split(whereSeparator: { "/?#".contains($0) })
+            .first
+            .map(String.init) ?? raw
+    }
+    
+    private static func normalizedIdentifier(_ raw: String) -> String {
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_."))
+        return String(raw.unicodeScalars.filter { allowed.contains($0) })
+    }
+    
+    private struct CachedSnapshot {
+        let posts: [WidgetPost]
+        let platform: WidgetPlatform?
+        let updatedAt: Date?
+    }
+    
+    private static func loadCachedSnapshot(preferred: WidgetPlatform?) -> CachedSnapshot {
+        let tistory = loadCachedSnapshot(for: .tistory)
+        let velog = loadCachedSnapshot(for: .velog)
+        
+        guard let preferred else {
+            let merged = mergePosts(primary: tistory.posts, secondary: velog.posts)
+            let updatedAt = newestDate(tistory.updatedAt, velog.updatedAt)
+            let dominantPlatform: WidgetPlatform? = tistory.posts.count >= velog.posts.count ? .tistory : .velog
+            return CachedSnapshot(
+                posts: merged,
+                platform: merged.isEmpty ? nil : dominantPlatform,
+                updatedAt: updatedAt
+            )
+        }
+        
+        let preferredSnapshot = preferred == .tistory ? tistory : velog
+        if !preferredSnapshot.posts.isEmpty {
+            return preferredSnapshot
+        }
+        
+        let fallbackSnapshot = preferred == .tistory ? velog : tistory
+        if !fallbackSnapshot.posts.isEmpty {
+            return fallbackSnapshot
+        }
+        
+        return CachedSnapshot(posts: [], platform: preferred, updatedAt: nil)
+    }
+    
+    private static func loadCachedSnapshot(for platform: WidgetPlatform) -> CachedSnapshot {
+        let defaults = UserDefaults(suiteName: WidgetGroupConfig.suiteName) ?? .standard
+        guard let data = defaults.data(forKey: cachedPostsKey(for: platform)),
+              let cacheItems = try? JSONDecoder().decode([WidgetCachedPost].self, from: data) else {
+            return CachedSnapshot(posts: [], platform: platform, updatedAt: nil)
+        }
+        
+        let posts = cacheItems.map { item in
+            WidgetPost(
+                id: item.id,
+                title: item.title,
+                url: item.url,
+                platform: platform,
+                publishedDate: item.publishedDate,
+                summary: item.summary
+            )
+        }
+        
+        let updatedAt = defaults.object(forKey: cachedUpdatedAtKey(for: platform)) as? Date
+        
+        return CachedSnapshot(
+            posts: posts,
+            platform: platform,
+            updatedAt: updatedAt
+        )
+    }
+    
+    private static func cachedPostsKey(for platform: WidgetPlatform) -> String {
+        switch platform {
+        case .tistory:
+            WidgetGroupConfig.cachedPostsTistoryKey
+        case .velog:
+            WidgetGroupConfig.cachedPostsVelogKey
+        }
+    }
+    
+    private static func cachedUpdatedAtKey(for platform: WidgetPlatform) -> String {
+        switch platform {
+        case .tistory:
+            WidgetGroupConfig.cachedUpdatedAtTistoryKey
+        case .velog:
+            WidgetGroupConfig.cachedUpdatedAtVelogKey
+        }
+    }
+    
+    private static func newestDate(_ left: Date?, _ right: Date?) -> Date? {
+        switch (left, right) {
+        case let (l?, r?):
+            max(l, r)
+        case let (l?, nil):
+            l
+        case let (nil, r?):
+            r
+        default:
+            nil
         }
     }
 }
@@ -463,12 +1279,52 @@ enum LargePostDirection: String, AppEnum {
     }
 }
 
-struct RefreshWidgetTimelineIntent: AppIntent {
-    static var title: LocalizedStringResource = "Refresh Widget"
+enum WidgetPlatformSelection: String, AppEnum {
+    case tistory
+    case velog
+    
+    static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "Widget Platform")
+    static var caseDisplayRepresentations: [Self: DisplayRepresentation] = [
+        .tistory: "Tistory",
+        .velog: "Velog"
+    ]
+    
+    var platform: WidgetPlatform {
+        switch self {
+        case .tistory:
+            return .tistory
+        case .velog:
+            return .velog
+        }
+    }
+}
+
+struct SetWidgetPlatformIntent: AppIntent {
+    static var title: LocalizedStringResource = "Set Widget Platform"
+    
+    @Parameter(title: "Platform")
+    var platform: WidgetPlatformSelection
+    
+    init() {
+        platform = .velog
+    }
+    
+    init(platform: WidgetPlatform) {
+        self.platform = platform == .tistory ? .tistory : .velog
+    }
     
     func perform() async throws -> some IntentResult {
-        WidgetFeedLoader.adjustSmallPostOffset(by: 1)
-        WidgetCenter.shared.reloadTimelines(ofKind: "logpocketWidget")
+        WidgetFeedLoader.setSelectedPlatform(platform.platform)
+        WidgetCenter.shared.reloadTimelines(ofKind: WidgetGroupConfig.widgetKind)
+        return .result()
+    }
+}
+
+struct RefreshWidgetTimelineIntent: AppIntent {
+    static var title: LocalizedStringResource = "Refresh Widget Data"
+    
+    func perform() async throws -> some IntentResult {
+        WidgetCenter.shared.reloadTimelines(ofKind: WidgetGroupConfig.widgetKind)
         return .result()
     }
 }
@@ -489,7 +1345,7 @@ struct ChangeLargePostIntent: AppIntent {
     
     func perform() async throws -> some IntentResult {
         WidgetFeedLoader.adjustLargePostOffset(by: direction.delta)
-        WidgetCenter.shared.reloadTimelines(ofKind: "logpocketWidget")
+        WidgetCenter.shared.reloadTimelines(ofKind: WidgetGroupConfig.widgetKind)
         return .result()
     }
 }
