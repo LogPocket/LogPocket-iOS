@@ -49,9 +49,16 @@ struct OnboardingView: View {
                         Text("완료")
                             .font(.headline)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
+                            .padding(.vertical, 10)
+                            .padding(.horizontal, 18)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.white)
+                    .background(
+                        Color.accentColor,
+                        in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    )
+                    .opacity(viewModel.isCompleteButtonEnabled ? 1 : 0.5)
                     .disabled(!viewModel.isCompleteButtonEnabled)
                     .padding(.top, 8)
                 }

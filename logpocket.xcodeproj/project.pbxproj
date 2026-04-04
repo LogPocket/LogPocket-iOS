@@ -6,6 +6,13 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		1C51A376F31CCF19B1DF7FA9 /* logpocketWidget.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 2D7A851739722B4978F74447 /* logpocketWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		5F6C7D61A2DAC071774C21FE /* logpocketWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96ABBA3136370DF91CFE31E4 /* logpocketWidgetBundle.swift */; };
+		AA6B60EDF569649A43100439 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9018CAC99F6E265E20897BE7 /* Foundation.framework */; };
+		C16649A7343C0498B140BD26 /* logpocketWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 569422A8BB32139441C55C83 /* logpocketWidget.swift */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		12F765072F7BDD8900DCE821 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -21,27 +28,61 @@
 			remoteGlobalIDString = 12F764F62F7BDD8800DCE821;
 			remoteInfo = logpocket;
 		};
+		E78936C6BA55F3ADF780C96C /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 12F764EF2F7BDD8800DCE821 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 2F4365851B0952240350D2D7;
+			remoteInfo = logpocketWidget;
+		};
 /* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		2C0D26D3A80FD35ED0FCAD56 /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				1C51A376F31CCF19B1DF7FA9 /* logpocketWidget.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		12F764F72F7BDD8800DCE821 /* logpocket.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = logpocket.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		12F765062F7BDD8900DCE821 /* logpocketTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = logpocketTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		12F765102F7BDD8900DCE821 /* logpocketUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = logpocketUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		2D7A851739722B4978F74447 /* logpocketWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = logpocketWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		3261E281C867D9F7DB9ABAFA /* ConfigurationAppIntent.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ConfigurationAppIntent.swift; path = logpocketWidget/ConfigurationAppIntent.swift; sourceTree = "<group>"; };
+		569422A8BB32139441C55C83 /* logpocketWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = logpocketWidget.swift; path = logpocketWidget/logpocketWidget.swift; sourceTree = "<group>"; };
+		742DA030D40C5E5C9FB925A7 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; name = Info.plist; path = logpocketWidget/Info.plist; sourceTree = "<group>"; };
+		9018CAC99F6E265E20897BE7 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+		96ABBA3136370DF91CFE31E4 /* logpocketWidgetBundle.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = logpocketWidgetBundle.swift; path = logpocketWidget/logpocketWidgetBundle.swift; sourceTree = "<group>"; };
+		B5D69A9B7A0E71FDD4A0D3CB /* logpocketWidget.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; name = logpocketWidget.entitlements; path = logpocketWidget/logpocketWidget.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		12F764F92F7BDD8800DCE821 /* logpocket */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = logpocket;
 			sourceTree = "<group>";
 		};
 		12F765092F7BDD8900DCE821 /* logpocketTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = logpocketTests;
 			sourceTree = "<group>";
 		};
 		12F765132F7BDD8900DCE821 /* logpocketUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = logpocketUITests;
 			sourceTree = "<group>";
 		};
@@ -69,6 +110,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		5BB7CDDC0371F8ABA266F4D7 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AA6B60EDF569649A43100439 /* Foundation.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -79,6 +128,8 @@
 				12F765092F7BDD8900DCE821 /* logpocketTests */,
 				12F765132F7BDD8900DCE821 /* logpocketUITests */,
 				12F764F82F7BDD8800DCE821 /* Products */,
+				4CBEE4DD996432AFB977E5F8 /* Frameworks */,
+				BF5F89E16481804BE1A169EF /* logpocketWidget */,
 			);
 			sourceTree = "<group>";
 		};
@@ -88,8 +139,37 @@
 				12F764F72F7BDD8800DCE821 /* logpocket.app */,
 				12F765062F7BDD8900DCE821 /* logpocketTests.xctest */,
 				12F765102F7BDD8900DCE821 /* logpocketUITests.xctest */,
+				2D7A851739722B4978F74447 /* logpocketWidget.appex */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		4CBEE4DD996432AFB977E5F8 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				90F79C0545128F26F888A83D /* iOS */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		90F79C0545128F26F888A83D /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				9018CAC99F6E265E20897BE7 /* Foundation.framework */,
+			);
+			name = iOS;
+			sourceTree = "<group>";
+		};
+		BF5F89E16481804BE1A169EF /* logpocketWidget */ = {
+			isa = PBXGroup;
+			children = (
+				569422A8BB32139441C55C83 /* logpocketWidget.swift */,
+				96ABBA3136370DF91CFE31E4 /* logpocketWidgetBundle.swift */,
+				3261E281C867D9F7DB9ABAFA /* ConfigurationAppIntent.swift */,
+				742DA030D40C5E5C9FB925A7 /* Info.plist */,
+				B5D69A9B7A0E71FDD4A0D3CB /* logpocketWidget.entitlements */,
+			);
+			name = logpocketWidget;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -102,17 +182,17 @@
 				12F764F32F7BDD8800DCE821 /* Sources */,
 				12F764F42F7BDD8800DCE821 /* Frameworks */,
 				12F764F52F7BDD8800DCE821 /* Resources */,
+				2C0D26D3A80FD35ED0FCAD56 /* Embed App Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				E176B47025BF9D64723902A2 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				12F764F92F7BDD8800DCE821 /* logpocket */,
 			);
 			name = logpocket;
-			packageProductDependencies = (
-			);
 			productName = logpocket;
 			productReference = 12F764F72F7BDD8800DCE821 /* logpocket.app */;
 			productType = "com.apple.product-type.application";
@@ -134,8 +214,6 @@
 				12F765092F7BDD8900DCE821 /* logpocketTests */,
 			);
 			name = logpocketTests;
-			packageProductDependencies = (
-			);
 			productName = logpocketTests;
 			productReference = 12F765062F7BDD8900DCE821 /* logpocketTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
@@ -157,11 +235,26 @@
 				12F765132F7BDD8900DCE821 /* logpocketUITests */,
 			);
 			name = logpocketUITests;
-			packageProductDependencies = (
-			);
 			productName = logpocketUITests;
 			productReference = 12F765102F7BDD8900DCE821 /* logpocketUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+		2F4365851B0952240350D2D7 /* logpocketWidget */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B2C73FCC0574718A78416992 /* Build configuration list for PBXNativeTarget "logpocketWidget" */;
+			buildPhases = (
+				E5C7E7971609D045A6C7BB58 /* Sources */,
+				5BB7CDDC0371F8ABA266F4D7 /* Frameworks */,
+				CED0A15A98656782BE1AE282 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = logpocketWidget;
+			productName = logpocketWidget;
+			productReference = 2D7A851739722B4978F74447 /* logpocketWidget.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -203,6 +296,7 @@
 				12F764F62F7BDD8800DCE821 /* logpocket */,
 				12F765052F7BDD8900DCE821 /* logpocketTests */,
 				12F7650F2F7BDD8900DCE821 /* logpocketUITests */,
+				2F4365851B0952240350D2D7 /* logpocketWidget */,
 			);
 		};
 /* End PBXProject section */
@@ -223,6 +317,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		12F7650E2F7BDD8900DCE821 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CED0A15A98656782BE1AE282 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -253,6 +354,15 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		E5C7E7971609D045A6C7BB58 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C16649A7343C0498B140BD26 /* logpocketWidget.swift in Sources */,
+				5F6C7D61A2DAC071774C21FE /* logpocketWidgetBundle.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -265,6 +375,12 @@
 			isa = PBXTargetDependency;
 			target = 12F764F62F7BDD8800DCE821 /* logpocket */;
 			targetProxy = 12F765112F7BDD8900DCE821 /* PBXContainerItemProxy */;
+		};
+		E176B47025BF9D64723902A2 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = logpocketWidget;
+			target = 2F4365851B0952240350D2D7 /* logpocketWidget */;
+			targetProxy = E78936C6BA55F3ADF780C96C /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -395,9 +511,10 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = logpocket/logpocket.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = GQ89YG5G9R;
+				DEVELOPMENT_TEAM = TA9TKWGKS3;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -427,9 +544,10 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = logpocket/logpocket.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = GQ89YG5G9R;
+				DEVELOPMENT_TEAM = TA9TKWGKS3;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -538,6 +656,47 @@
 			};
 			name = Release;
 		};
+		6064F51FD9E51C7D4DA4A606 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = logpocketWidget/logpocketWidget.entitlements;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = TA9TKWGKS3;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = logpocketWidget/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.markrudy.logpockets.widget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		FDBF18EF3C7FDA8D9335DE7A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = logpocketWidget/logpocketWidget.entitlements;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = TA9TKWGKS3;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = logpocketWidget/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.markrudy.logpockets.widget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -573,6 +732,15 @@
 			buildConfigurations = (
 				12F765212F7BDD8900DCE821 /* Debug */,
 				12F765222F7BDD8900DCE821 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		B2C73FCC0574718A78416992 /* Build configuration list for PBXNativeTarget "logpocketWidget" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				FDBF18EF3C7FDA8D9335DE7A /* Release */,
+				6064F51FD9E51C7D4DA4A606 /* Debug */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
