@@ -19,8 +19,6 @@ struct HomeView: View {
         NavigationStack {
             ScrollViewReader { proxy in
                 VStack(spacing: 14) {
-                    overviewCard
-                    
                     VStack(spacing: 10) {
                         Picker("Platform", selection: Binding(
                             get: { viewModel.selectedPlatform },
@@ -142,37 +140,6 @@ struct HomeView: View {
                 }
             }
         }
-    }
-    
-    private var overviewCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Label("오늘의 블로그", systemImage: "book.pages.fill")
-                    .font(.headline)
-                Spacer(minLength: 8)
-                Label(viewModel.selectedPlatform.rawValue, systemImage: viewModel.selectedPlatform == .velog ? "v.square.fill" : "t.square.fill")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(viewModel.selectedPlatform == .velog ? .green : .orange)
-            }
-            
-            Text(viewModel.currentBlogIdentifier)
-                .font(.title3.weight(.bold))
-                .lineLimit(1)
-            
-            Text("위젯에서 글을 누르면 해당 글 위치로 바로 이동해요.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            LinearGradient(
-                colors: [Color.accentColor.opacity(0.14), Color.accentColor.opacity(0.06)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            ),
-            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
-        )
     }
     
     private var emptyState: some View {

@@ -17,6 +17,7 @@ private enum WidgetGroupConfig {
     static let appDeepLinkHost = "post"
     static let largePostOffsetKey = "widgetLargePostOffset"
     static let smallPostOffsetKey = "widgetSmallPostOffset"
+    static let mediumPostOffsetKey = "widgetMediumPostOffset"
     static let cachedPostsTistoryKey = "widgetCachedPostsTistory"
     static let cachedPostsVelogKey = "widgetCachedPostsVelog"
     static let cachedUpdatedAtTistoryKey = "widgetCachedUpdatedAtTistory"
@@ -104,9 +105,16 @@ struct LogPocketEntry: TimelineEntry {
     let errorMessage: String?
     let largePostOffset: Int
     let smallPostOffset: Int
+    let mediumPostOffset: Int
     let platform: WidgetPlatform?
     let lastUpdatedAt: Date?
     let isFromCache: Bool
+    /// 티스토리·벨로그 둘 다 연결된 경우에만 `true` (세그먼트 표시).
+    let supportsPlatformSegment: Bool
+    /// 세그먼트에서 강조할 플랫폼 (`supportsPlatformSegment`일 때만 사용).
+    let platformSegmentSelection: WidgetPlatform
+    /// 설정은 있으나 티스토리·벨로그 중 하나만 등록된 경우 (스몰·미디엄·라지 공통 안내).
+    let incompleteDualPlatformRegistration: Bool
 }
 
 struct LogPocketProvider: TimelineProvider {
@@ -117,9 +125,13 @@ struct LogPocketProvider: TimelineProvider {
             errorMessage: nil,
             largePostOffset: 0,
             smallPostOffset: 0,
+            mediumPostOffset: 0,
             platform: .velog,
             lastUpdatedAt: .now,
-            isFromCache: false
+            isFromCache: false,
+            supportsPlatformSegment: true,
+            platformSegmentSelection: .velog,
+            incompleteDualPlatformRegistration: false
         )
     }
     
@@ -129,6 +141,10 @@ struct LogPocketProvider: TimelineProvider {
             let posts = context.isPreview && result.posts.isEmpty ? samplePosts : result.posts
             let offset = WidgetFeedLoader.loadLargePostOffset()
             let smallOffset = WidgetFeedLoader.loadSmallPostOffset()
+            let mediumOffset = WidgetFeedLoader.loadMediumPostOffset()
+            let dual = WidgetFeedLoader.dualPlatformLinked()
+            let segmentPick = WidgetFeedLoader.platformForSegmentHighlight(feedResult: result)
+            let incomplete = WidgetFeedLoader.incompleteDualPlatformRegistration()
             
             completion(
                 LogPocketEntry(
@@ -137,9 +153,13 @@ struct LogPocketProvider: TimelineProvider {
                     errorMessage: result.errorMessage,
                     largePostOffset: offset,
                     smallPostOffset: smallOffset,
+                    mediumPostOffset: mediumOffset,
                     platform: result.platform,
                     lastUpdatedAt: result.lastUpdatedAt,
-                    isFromCache: result.isFromCache
+                    isFromCache: result.isFromCache,
+                    supportsPlatformSegment: dual,
+                    platformSegmentSelection: segmentPick,
+                    incompleteDualPlatformRegistration: incomplete
                 )
             )
         }
@@ -150,6 +170,10 @@ struct LogPocketProvider: TimelineProvider {
             let result = await WidgetFeedLoader.loadFeed()
             let offset = WidgetFeedLoader.loadLargePostOffset()
             let smallOffset = WidgetFeedLoader.loadSmallPostOffset()
+            let mediumOffset = WidgetFeedLoader.loadMediumPostOffset()
+            let dual = WidgetFeedLoader.dualPlatformLinked()
+            let segmentPick = WidgetFeedLoader.platformForSegmentHighlight(feedResult: result)
+            let incomplete = WidgetFeedLoader.incompleteDualPlatformRegistration()
             
             let entry = LogPocketEntry(
                 date: .now,
@@ -157,9 +181,13 @@ struct LogPocketProvider: TimelineProvider {
                 errorMessage: result.errorMessage,
                 largePostOffset: offset,
                 smallPostOffset: smallOffset,
+                mediumPostOffset: mediumOffset,
                 platform: result.platform,
                 lastUpdatedAt: result.lastUpdatedAt,
-                isFromCache: result.isFromCache
+                isFromCache: result.isFromCache,
+                supportsPlatformSegment: dual,
+                platformSegmentSelection: segmentPick,
+                incompleteDualPlatformRegistration: incomplete
             )
             
             let nextRefresh = Calendar.current.date(byAdding: .minute, value: 10, to: .now) ?? .now.addingTimeInterval(600)
@@ -212,12 +240,63 @@ struct logpocketWidgetEntryView: View {
         }
     }
     
+    /// 위젯 공통 숫자만 날짜 (예: 26.4.2)
+    private static let widgetNumericDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "ko_KR")
+        f.dateFormat = "yy.M.d"
+        return f
+    }()
+    
+    private func widgetNumericDateString(_ date: Date?) -> String {
+        guard let date else { return "-" }
+        return Self.widgetNumericDateFormatter.string(from: date)
+    }
+    
+    /// 제목 앞의 `[프로그래머스]` 등 대괄호 태그 제거 (위젯 표시용)
+    private func widgetDisplayTitle(_ raw: String) -> String {
+        var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let pattern = "^\\[[^\\]]+\\]\\s*"
+        while let range = s.range(of: pattern, options: .regularExpression) {
+            s.removeSubrange(range)
+            s = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return s.isEmpty ? raw : s
+    }
+    
+    private var dualPlatformRegistrationMessage: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("LogPocket", systemImage: "book.pages")
+                .font(.headline)
+                .foregroundStyle(Color.accentColor)
+            Text("등록이 안되어있습니다")
+                .font(.subheadline.weight(.semibold))
+            Text("티스토리와 벨로그를 모두 앱에서 등록해 주세요.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+    
     private var accentColor: Color {
-        entry.platform?.tint ?? .accentColor
+        switch family {
+        case .systemSmall:
+            return selectedSmallPost?.platform.tint ?? entry.platform?.tint ?? .accentColor
+        case .systemMedium:
+            return mediumLeadPost?.platform.tint ?? entry.platform?.tint ?? .accentColor
+        default:
+            return focusedLargePost?.platform.tint ?? entry.platform?.tint ?? .accentColor
+        }
     }
     
     private var platformLabel: String {
-        entry.platform?.rawValue ?? "Blog"
+        if entry.platform != nil {
+            return entry.platform!.rawValue
+        }
+        if !entry.posts.isEmpty {
+            return "최근 글"
+        }
+        return "Blog"
     }
     
     private var smallIndex: Int {
@@ -247,12 +326,15 @@ struct logpocketWidgetEntryView: View {
         return "\(largeIndex + 1)/\(entry.posts.count)"
     }
     
-    private var mediumLeadPost: WidgetPost? {
-        entry.posts.first
+    private var mediumStartIndex: Int {
+        guard !entry.posts.isEmpty else { return 0 }
+        let count = entry.posts.count
+        return ((entry.mediumPostOffset % count) + count) % count
     }
     
-    private var mediumSecondaryPosts: [WidgetPost] {
-        Array(entry.posts.dropFirst().prefix(2))
+    private var mediumLeadPost: WidgetPost? {
+        guard !entry.posts.isEmpty else { return nil }
+        return entry.posts[mediumStartIndex]
     }
     
     private struct RankedWidgetPost: Identifiable {
@@ -270,31 +352,28 @@ struct logpocketWidgetEntryView: View {
             let index = (largeIndex + offset) % entry.posts.count
             return RankedWidgetPost(
                 post: entry.posts[index],
-                rank: index + 1
+                rank: offset + 1
             )
         }
     }
     
-    private var syncStatusText: String {
-        if let lastUpdatedAt = entry.lastUpdatedAt {
-            let relative = Self.relativeFormatter.localizedString(for: lastUpdatedAt, relativeTo: entry.date)
-            return entry.isFromCache ? "캐시 · \(relative)" : "업데이트 \(relative)"
-        }
-        return entry.isFromCache ? "캐시 데이터" : "업데이트 대기"
-    }
-    
     private var smallWidget: some View {
-        ZStack(alignment: .bottomTrailing) {
-            Group {
-                if let post = selectedSmallPost {
-                    VStack(alignment: .leading, spacing: 7) {
+        Group {
+            if entry.incompleteDualPlatformRegistration {
+                dualPlatformRegistrationMessage
+                    .padding(10)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            } else if let post = selectedSmallPost {
+                VStack(alignment: .leading, spacing: 0) {
+                    VStack(alignment: .leading, spacing: 6) {
                         headerBadge(label: platformLabel, detail: "\(smallIndex + 1)/\(entry.posts.count)")
                         
-                        Text(post.title)
-                            .font(.system(size: 15, weight: .semibold))
+                        Text(widgetDisplayTitle(post.title))
+                            .font(.system(size: 14, weight: .semibold))
                             .foregroundStyle(.primary)
                             .lineLimit(2)
                             .multilineTextAlignment(.leading)
+                            .minimumScaleFactor(0.92)
                         
                         Text(contentDigest(for: post))
                             .font(.caption2)
@@ -302,82 +381,235 @@ struct logpocketWidgetEntryView: View {
                             .lineLimit(2)
                             .multilineTextAlignment(.leading)
                         
-                        HStack(spacing: 6) {
-                            insightChip(text: topicLabel(for: post), tint: accentColor, filled: true)
-                            Text(readingHint(for: post))
+                        if entry.isFromCache {
+                            Text("캐시")
                                 .font(.caption2.weight(.semibold))
                                 .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.8)
-                        }
-                        
-                        Spacer(minLength: 0)
-                        
-                        HStack(spacing: 6) {
-                            dateText(post.publishedDate)
-                                .font(.caption2)
-                            if entry.isFromCache {
-                                Text("캐시")
-                                    .font(.caption2.weight(.semibold))
-                                    .foregroundStyle(.secondary)
-                            }
                         }
                     }
-                    .padding(10)
-                } else {
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .padding(.horizontal, 10)
+                    .padding(.top, 10)
+                    .padding(.bottom, 6)
+                    
+                    Rectangle()
+                        .fill(Color.primary.opacity(0.12))
+                        .frame(height: 1)
+                        .padding(.horizontal, 8)
+                    
+                    smallWidgetBottomBar(post: post)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 0) {
                     emptyState
                         .padding(10)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    Rectangle()
+                        .fill(Color.primary.opacity(0.12))
+                        .frame(height: 1)
+                        .padding(.horizontal, 8)
+                    smallWidgetBottomBar(post: nil)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            
-            Button(intent: RefreshWidgetTimelineIntent()) {
-                Image(systemName: "arrow.clockwise.circle.fill")
-                    .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(accentColor)
-            }
-            .buttonStyle(.plain)
-            .padding(8)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .widgetURL(selectedSmallPost.flatMap { appDeepLink(for: $0) })
+        .widgetURL(
+            entry.incompleteDualPlatformRegistration ? nil : selectedSmallPost.flatMap { appDeepLink(for: $0) }
+        )
+    }
+    
+    @ViewBuilder
+    private func smallWidgetBottomBar(post: WidgetPost?) -> some View {
+        HStack(alignment: .center, spacing: 8) {
+            if let post {
+                Text(widgetNumericDateString(post.publishedDate))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                Spacer(minLength: 0)
+            }
+            
+            HStack(spacing: 6) {
+                if let post, entry.supportsPlatformSegment {
+                    Button(intent: ToggleWidgetPlatformIntent()) {
+                        Image(systemName: "arrow.left.arrow.right.circle.fill")
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundStyle(accentColor)
+                    }
+                    .buttonStyle(.plain)
+                }
+                Button(intent: ChangeSmallPostIntent()) {
+                    Image(systemName: "arrow.clockwise.circle.fill")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(accentColor)
+                }
+                .buttonStyle(.plain)
+            }
+            .fixedSize(horizontal: true, vertical: false)
+        }
     }
     
     private var mediumWidget: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            headerBadge(label: "\(platformLabel) 최근 글", detail: syncStatusText, showsRefreshButton: true)
-            
-            if entry.posts.isEmpty {
+        Group {
+            if entry.incompleteDualPlatformRegistration {
+                dualPlatformRegistrationMessage
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            } else if entry.posts.isEmpty {
                 emptyState
             } else {
-                if let lead = mediumLeadPost {
-                    mediumLeadPostCard(lead)
-                }
-                
-                ForEach(Array(mediumSecondaryPosts.enumerated()), id: \.element.id) { index, post in
-                    mediumSecondaryPostCard(post, rank: index + 2)
-                }
-                
-                if entry.posts.count > 3 {
-                    Text("+\(entry.posts.count - 3)개 더")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 0) {
+                    mediumWidgetHeaderRow
+                    
+                    if let lead = mediumLeadPost {
+                        mediumCompactFeaturedPost(lead)
+                            .padding(.top, 6)
+                    }
+                    
+                    Spacer(minLength: 0)
+                    
+                    Button(intent: ChangeMediumPostIntent()) {
+                        HStack(spacing: 4) {
+                            Text("다음 글")
+                                .font(.caption2.weight(.semibold))
+                            Image(systemName: "chevron.right")
+                                .font(.caption2.weight(.bold))
+                        }
+                        .foregroundStyle(.primary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 5)
+                        .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, 4)
                 }
             }
         }
-        .padding(10)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+    
+    private var mediumProgressLabel: String {
+        guard !entry.posts.isEmpty else { return "0/0" }
+        return "\(mediumStartIndex + 1)/\(entry.posts.count)"
+    }
+    
+    private var mediumWidgetHeaderRow: some View {
+        HStack(alignment: .center, spacing: 5) {
+            Text("글 모아보기")
+                .font(.caption2.weight(.semibold))
+                .lineLimit(1)
+            Spacer(minLength: 4)
+            if entry.supportsPlatformSegment {
+                widgetPlatformSegmentedControl
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+            if !entry.posts.isEmpty {
+                Text(mediumProgressLabel)
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+            Button(intent: RefreshWidgetTimelineIntent()) {
+                Image(systemName: "arrow.clockwise")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(accentColor)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+    
+    private var widgetPlatformSegmentedControl: some View {
+        HStack(spacing: 1) {
+            widgetPlatformSegmentButton(.velog)
+            widgetPlatformSegmentButton(.tistory)
+        }
+        .padding(2)
+        .background(Color.primary.opacity(0.12), in: Capsule())
+    }
+    
+    private func widgetPlatformSegmentButton(_ platform: WidgetPlatform) -> some View {
+        let selected = entry.platformSegmentSelection == platform
+        return Button(intent: SetWidgetPlatformIntent(platform: platform)) {
+            Image(systemName: platform.symbolName)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(selected ? platform.tint : .secondary)
+                .frame(width: 26, height: 18)
+                .background(
+                    selected ? platform.tint.opacity(0.25) : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 4, style: .continuous)
+                )
+        }
+        .buttonStyle(.plain)
+    }
+    
+    @ViewBuilder
+    private func mediumCompactFeaturedPost(_ post: WidgetPost) -> some View {
+        if let destination = appDeepLink(for: post) {
+            Link(destination: destination) {
+                mediumCompactFeaturedCard(post)
+            }
+        } else {
+            mediumCompactFeaturedCard(post)
+        }
+    }
+    
+    private func mediumCompactFeaturedCard(_ post: WidgetPost) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                .fill(post.platform.tint)
+                .frame(width: 3, height: 44)
+            
+            VStack(alignment: .leading, spacing: 5) {
+                Text(widgetDisplayTitle(post.title))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                    .minimumScaleFactor(0.88)
+                
+                Text(contentDigest(for: post))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+                    .multilineTextAlignment(.leading)
+                    .minimumScaleFactor(0.9)
+                
+                Text(widgetNumericDateString(post.publishedDate))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.primary.opacity(0.06))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(post.platform.tint.opacity(0.28), lineWidth: 1)
+        )
     }
     
     private var largeWidget: some View {
         VStack(alignment: .leading, spacing: 8) {
-            headerBadge(
-                label: "\(platformLabel) 집중 보기",
-                detail: "\(largeProgressLabel) · \(syncStatusText)",
-                showsRefreshButton: true
-            )
-            
-            largePlatformSelector
+            if entry.incompleteDualPlatformRegistration {
+                dualPlatformRegistrationMessage
+                Spacer(minLength: 0)
+            } else {
+            largeWidgetHeaderRow
             
             if let primary = focusedLargePost {
                 largeFocusedPost(primary)
@@ -408,110 +640,34 @@ struct logpocketWidgetEntryView: View {
             } else {
                 emptyState
             }
+            }
         }
         .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
     
-    private var largePlatformSelector: some View {
-        HStack(spacing: 6) {
-            platformSelectionButton(.velog)
-            platformSelectionButton(.tistory)
-            Spacer(minLength: 0)
-        }
-    }
-    
-    private func platformSelectionButton(_ platform: WidgetPlatform) -> some View {
-        let isSelected = entry.platform == platform
-        
-        return Button(intent: SetWidgetPlatformIntent(platform: platform)) {
-            HStack(spacing: 4) {
-                Image(systemName: platform.symbolName)
-                    .font(.caption2.weight(.semibold))
-                Text(platform.rawValue)
-                    .font(.caption2.weight(.semibold))
-            }
-            .padding(.vertical, 5)
-            .padding(.horizontal, 8)
-            .background(
-                isSelected ? platform.tint.opacity(0.2) : Color(.secondarySystemBackground),
-                in: Capsule()
-            )
-            .foregroundStyle(isSelected ? platform.tint : .secondary)
-        }
-        .buttonStyle(.plain)
-    }
-    
-    @ViewBuilder
-    private func mediumLeadPostCard(_ post: WidgetPost) -> some View {
-        if let destination = appDeepLink(for: post) {
-            Link(destination: destination) {
-                mediumLeadCardContent(post)
-            }
-        } else {
-            mediumLeadCardContent(post)
-        }
-    }
-    
-    private func mediumLeadCardContent(_ post: WidgetPost) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(post.title)
-                .font(.subheadline.weight(.semibold))
-                .lineLimit(2)
-            
-            Text(contentDigest(for: post))
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
-            
-            HStack(spacing: 6) {
-                insightChip(text: topicLabel(for: post), tint: accentColor, filled: true)
-                Text(readingHint(for: post))
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                Spacer(minLength: 2)
-                dateText(post.publishedDate)
-                    .font(.caption2)
-            }
-        }
-        .padding(9)
-        .background(accentColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-    }
-    
-    @ViewBuilder
-    private func mediumSecondaryPostCard(_ post: WidgetPost, rank: Int) -> some View {
-        if let destination = appDeepLink(for: post) {
-            Link(destination: destination) {
-                mediumSecondaryCardContent(post, rank: rank)
-            }
-        } else {
-            mediumSecondaryCardContent(post, rank: rank)
-        }
-    }
-    
-    private func mediumSecondaryCardContent(_ post: WidgetPost, rank: Int) -> some View {
-        HStack(spacing: 7) {
-            Text("\(rank)")
-                .font(.caption2.weight(.bold))
-                .foregroundStyle(accentColor)
-                .frame(width: 10, alignment: .leading)
-            
-            VStack(alignment: .leading, spacing: 2) {
-                Text(post.title)
-                    .font(.caption.weight(.semibold))
-                    .lineLimit(1)
-                Text(contentDigest(for: post))
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-            
+    private var largeWidgetHeaderRow: some View {
+        HStack(alignment: .center, spacing: 6) {
+            Text("글 보기")
+                .font(.caption.weight(.semibold))
+                .lineLimit(1)
             Spacer(minLength: 4)
-            
-            dateText(post.publishedDate)
-                .font(.caption2)
+            if entry.supportsPlatformSegment {
+                widgetPlatformSegmentedControl
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+            if !entry.posts.isEmpty {
+                Text(largeProgressLabel)
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+            Button(intent: RefreshWidgetTimelineIntent()) {
+                Image(systemName: "arrow.clockwise")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(accentColor)
+            }
+            .buttonStyle(.plain)
         }
     }
     
@@ -533,11 +689,12 @@ struct logpocketWidgetEntryView: View {
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(accentColor)
                 Spacer(minLength: 6)
-                dateText(post.publishedDate)
+                Text(widgetNumericDateString(post.publishedDate))
                     .font(.caption2)
+                    .foregroundStyle(.secondary)
             }
             
-            Text(post.title)
+            Text(widgetDisplayTitle(post.title))
                 .font(.headline.weight(.semibold))
                 .lineLimit(3)
                 .multilineTextAlignment(.leading)
@@ -548,12 +705,10 @@ struct logpocketWidgetEntryView: View {
                 .lineLimit(5)
                 .multilineTextAlignment(.leading)
             
-            HStack(spacing: 6) {
-                insightChip(text: topicLabel(for: post), tint: accentColor, filled: true)
-                insightChip(text: readingHint(for: post), tint: .secondary, filled: false)
-                if entry.isFromCache {
-                    insightChip(text: "캐시", tint: .secondary, filled: false)
-                }
+            if entry.isFromCache {
+                Text("캐시")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
             }
             
             if post.summary == nil || post.summary?.isEmpty == true {
@@ -594,7 +749,7 @@ struct logpocketWidgetEntryView: View {
                 .frame(width: 10, alignment: .leading)
             
             VStack(alignment: .leading, spacing: 2) {
-                Text(post.title)
+                Text(widgetDisplayTitle(post.title))
                     .font(.caption.weight(.semibold))
                     .lineLimit(1)
                 Text(contentDigest(for: post))
@@ -605,8 +760,9 @@ struct logpocketWidgetEntryView: View {
             
             Spacer(minLength: 4)
             
-            dateText(post.publishedDate)
+            Text(widgetNumericDateString(post.publishedDate))
                 .font(.caption2)
+                .foregroundStyle(.secondary)
         }
     }
     
@@ -672,60 +828,17 @@ struct logpocketWidgetEntryView: View {
             return truncated(summary, limit: 130)
         }
         
-        let normalizedTitle = post.title
+        let normalizedTitle = widgetDisplayTitle(post.title)
             .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         
         return "이 글은 \(truncated(normalizedTitle, limit: 42))에 대한 핵심 내용을 다뤄요."
     }
     
-    private func topicLabel(for post: WidgetPost) -> String {
-        let separators = CharacterSet(charactersIn: "-|:[]()·,/·•")
-        let tokens = post.title
-            .components(separatedBy: separators)
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { $0.count >= 2 }
-        
-        let stopWords = ["정리", "후기", "기록", "문제", "풀이", "공유", "리뷰", "가이드"]
-        if let token = tokens.first(where: { !stopWords.contains($0) }) {
-            return truncated(token, limit: 10)
-        }
-        
-        return post.platform == .velog ? "Velog 글" : "Tistory 글"
-    }
-    
-    private func readingHint(for post: WidgetPost) -> String {
-        let baseText = post.summary?.isEmpty == false ? (post.summary ?? post.title) : post.title
-        let characters = max(baseText.count, 80)
-        let minutes = max(1, Int(ceil(Double(characters) / 180.0)))
-        return "\(minutes)분 읽기"
-    }
-    
     private func truncated(_ text: String, limit: Int) -> String {
         guard text.count > limit else { return text }
         let head = text.prefix(limit)
         return "\(head)…"
-    }
-    
-    private func insightChip(text: String, tint: Color, filled: Bool) -> some View {
-        Text(text)
-            .font(.caption2.weight(.semibold))
-            .lineLimit(1)
-            .minimumScaleFactor(0.75)
-            .allowsTightening(true)
-            .padding(.vertical, 4)
-            .padding(.horizontal, 7)
-            .background(
-                filled ? tint.opacity(0.18) : Color(.secondarySystemBackground),
-                in: Capsule()
-            )
-            .foregroundStyle(filled ? tint : .secondary)
-    }
-    
-    private func dateText(_ date: Date?) -> Text {
-        guard let date else { return Text("-") }
-        return Text(date, style: .date)
-            .foregroundStyle(.secondary)
     }
     
     private var emptyState: some View {
@@ -740,13 +853,6 @@ struct logpocketWidgetEntryView: View {
             Spacer(minLength: 0)
         }
     }
-    
-    private static let relativeFormatter: RelativeDateTimeFormatter = {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .short
-        formatter.locale = Locale(identifier: "ko_KR")
-        return formatter
-    }()
 }
 
 struct logpocketWidget: Widget {
@@ -767,10 +873,9 @@ enum WidgetFeedLoader {
     static func loadFeed() async -> WidgetFeedResult {
         let hasSharedDefaults = sharedDefaults() != nil
         let settings = loadSettings()
-        let resolvedPlatform = settings.flatMap { resolvePlatform(from: $0) }
-        let cached = loadCachedSnapshot(preferred: resolvedPlatform)
         
         guard let settings else {
+            let cached = loadCachedSnapshot(preferred: nil)
             if cached.posts.isEmpty {
                 return WidgetFeedResult(
                     posts: [],
@@ -791,6 +896,9 @@ enum WidgetFeedLoader {
                 isFromCache: true
             )
         }
+        
+        let resolvedPlatform = resolvePlatform(from: settings)
+        let cached = loadCachedSnapshot(preferred: resolvedPlatform)
         
         guard let platform = resolvedPlatform else {
             if cached.posts.isEmpty {
@@ -917,6 +1025,40 @@ enum WidgetFeedLoader {
         UserDefaults(suiteName: WidgetGroupConfig.suiteName)
     }
     
+    /// 두 플랫폼 URL이 모두 비어 있지 않으면 세그먼트 표시.
+    /// (`buildFeedURL` 성공 여부와 무관 — 파싱 실패 시에도 전환 UI는 보이게 함)
+    static func dualPlatformLinked() -> Bool {
+        guard let settings = loadSettings() else { return false }
+        return settings.hasTistory && settings.hasVelog
+    }
+    
+    /// 앱 설정이 있는데 티스토리·벨로그 중 하나만 채워진 경우.
+    static func incompleteDualPlatformRegistration() -> Bool {
+        guard let settings = loadSettings() else { return false }
+        return !(settings.hasTistory && settings.hasVelog)
+    }
+    
+    static func toggleWidgetPlatform() {
+        guard dualPlatformLinked() else { return }
+        let current = loadSelectedPlatform()
+            ?? loadSettings()?.preferredPlatform
+            ?? .tistory
+        let next: WidgetPlatform = (current == .velog) ? .tistory : .velog
+        setSelectedPlatform(next)
+    }
+    
+    static func platformForSegmentHighlight(feedResult: WidgetFeedResult) -> WidgetPlatform {
+        if let p = feedResult.platform { return p }
+        if let s = loadSelectedPlatform() { return s }
+        guard let settings = loadSettings() else { return .velog }
+        if let pref = settings.preferredPlatform,
+           buildFeedURL(from: settings, platform: pref) != nil {
+            return pref
+        }
+        if buildFeedURL(from: settings, platform: .tistory) != nil { return .tistory }
+        return .velog
+    }
+    
     private static func resolvePlatform(from settings: WidgetUserSettings) -> WidgetPlatform? {
         if let selected = loadSelectedPlatform(),
            buildFeedURL(from: settings, platform: selected) != nil {
@@ -943,6 +1085,8 @@ enum WidgetFeedLoader {
         guard let defaults = sharedDefaults() else { return }
         defaults.set(platform.deepLinkValue, forKey: WidgetGroupConfig.selectedPlatformKey)
         defaults.set(0, forKey: WidgetGroupConfig.largePostOffsetKey)
+        defaults.set(0, forKey: WidgetGroupConfig.smallPostOffsetKey)
+        defaults.set(0, forKey: WidgetGroupConfig.mediumPostOffsetKey)
     }
     
     private static func loadSelectedPlatform() -> WidgetPlatform? {
@@ -991,6 +1135,17 @@ enum WidgetFeedLoader {
         let defaults = UserDefaults(suiteName: WidgetGroupConfig.suiteName) ?? .standard
         let current = defaults.integer(forKey: WidgetGroupConfig.smallPostOffsetKey)
         defaults.set(current + delta, forKey: WidgetGroupConfig.smallPostOffsetKey)
+    }
+    
+    static func loadMediumPostOffset() -> Int {
+        let defaults = UserDefaults(suiteName: WidgetGroupConfig.suiteName) ?? .standard
+        return defaults.integer(forKey: WidgetGroupConfig.mediumPostOffsetKey)
+    }
+    
+    static func adjustMediumPostOffset(by delta: Int) {
+        let defaults = UserDefaults(suiteName: WidgetGroupConfig.suiteName) ?? .standard
+        let current = defaults.integer(forKey: WidgetGroupConfig.mediumPostOffsetKey)
+        defaults.set(current + delta, forKey: WidgetGroupConfig.mediumPostOffsetKey)
     }
     
     private static func makePosts(from items: [WidgetRSSItem], platform: WidgetPlatform) -> [WidgetPost] {
@@ -1320,10 +1475,40 @@ struct SetWidgetPlatformIntent: AppIntent {
     }
 }
 
+struct ToggleWidgetPlatformIntent: AppIntent {
+    static var title: LocalizedStringResource = "Toggle Widget Platform"
+    
+    func perform() async throws -> some IntentResult {
+        WidgetFeedLoader.toggleWidgetPlatform()
+        WidgetCenter.shared.reloadTimelines(ofKind: WidgetGroupConfig.widgetKind)
+        return .result()
+    }
+}
+
 struct RefreshWidgetTimelineIntent: AppIntent {
     static var title: LocalizedStringResource = "Refresh Widget Data"
     
     func perform() async throws -> some IntentResult {
+        WidgetCenter.shared.reloadTimelines(ofKind: WidgetGroupConfig.widgetKind)
+        return .result()
+    }
+}
+
+struct ChangeSmallPostIntent: AppIntent {
+    static var title: LocalizedStringResource = "Next Small Widget Post"
+    
+    func perform() async throws -> some IntentResult {
+        WidgetFeedLoader.adjustSmallPostOffset(by: 1)
+        WidgetCenter.shared.reloadTimelines(ofKind: WidgetGroupConfig.widgetKind)
+        return .result()
+    }
+}
+
+struct ChangeMediumPostIntent: AppIntent {
+    static var title: LocalizedStringResource = "Next Medium Widget Posts"
+    
+    func perform() async throws -> some IntentResult {
+        WidgetFeedLoader.adjustMediumPostOffset(by: 1)
         WidgetCenter.shared.reloadTimelines(ofKind: WidgetGroupConfig.widgetKind)
         return .result()
     }
